@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
 
@@ -30,14 +30,14 @@ export default function LeagueDetailPage() {
 
   // Subscribe to live draft status changes
   useEffect(() => {
-    const channel = supabase
+    const channel = getSupabase()
       .channel(`league-status-${id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leagues', filter: `id=eq.${id}` },
         payload => {
           setLeague(prev => prev ? { ...prev, ...(payload.new as any) } : prev);
         })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { getSupabase().removeChannel(channel); };
   }, [id]);
 
   const startDraft = async () => {

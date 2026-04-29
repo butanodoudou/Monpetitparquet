@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { buildSnakeOrder } from '@/lib/fantasy';
 import Image from 'next/image';
 
@@ -50,7 +50,7 @@ export default function DraftPage() {
 
   // Supabase Realtime: listen to draft_picks and leagues changes
   useEffect(() => {
-    const channel = supabase.channel(`draft-${leagueId}`)
+    const channel = getSupabase().channel(`draft-${leagueId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'draft_picks', filter: `league_id=eq.${leagueId}` },
         async (payload) => {
           const newPick = payload.new as any;
@@ -77,7 +77,7 @@ export default function DraftPage() {
           setPicks(d.draftPicks ?? []);
         })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { getSupabase().removeChannel(channel); };
   }, [leagueId, token]);
 
   // Local timer countdown
