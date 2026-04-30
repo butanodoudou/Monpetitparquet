@@ -3,8 +3,8 @@
 // Betclic Élite = France Pro A, League ID 116, Season 2024
 
 const HOST = 'https://v1.basketball.api-sports.io';
-export const LEAGUE_ID = 116;
-export const SEASON = 2024;
+export const LEAGUE_ID = 2;
+export const SEASON = '2024-2025';
 
 async function call<T>(path: string, params: Record<string, string | number> = {}): Promise<T[]> {
   const url = new URL(`${HOST}${path}`);
