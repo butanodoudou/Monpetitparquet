@@ -4,7 +4,7 @@
 
 const HOST = 'https://v1.basketball.api-sports.io';
 export const LEAGUE_ID = 2;
-export const SEASON = '2025-2026';
+export const SEASON = '2024-2025';
 
 async function call<T>(path: string, params: Record<string, string | number> = {}): Promise<T[]> {
   const url = new URL(`${HOST}${path}`);
