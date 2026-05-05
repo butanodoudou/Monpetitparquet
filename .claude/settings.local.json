@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git *)"
+      "Bash(git *)",
+      "WebSearch",
+      "WebFetch(domain:www.lnb.fr)",
+      "WebFetch(domain:www.thesportsdb.com)",
+      "WebFetch(domain:www.api-basketball.com)",
+      "WebFetch(domain:www.altrnet.xyz)"
     ]
   }
 }
