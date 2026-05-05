@@ -1,26 +1,26 @@
 // Sofascore unofficial API — Pro A / Betclic Élite
-// No API key required. Headers required to avoid 403.
+// Sofascore is behind Cloudflare: route requests through ScraperAPI in production.
+// SCRAPER_API_KEY env var required on Vercel (free tier: 1000 req/month).
 
-const BASE = 'https://api.sofascore.com/api/v1';
+const SOFA_BASE = 'https://api.sofascore.com/api/v1';
 export const TOURNAMENT_ID = 156;  // Pro A / Betclic Élite
 export const SEASON_ID     = 79100; // 2025-2026
 
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Referer': 'https://www.sofascore.com/',
-  'Origin': 'https://www.sofascore.com',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-  'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-  'sec-ch-ua-mobile': '?0',
-  'sec-ch-ua-platform': '"Windows"',
-  'sec-fetch-dest': 'empty',
-  'sec-fetch-mode': 'cors',
-  'sec-fetch-site': 'same-site',
-};
+function buildUrl(path: string): string {
+  const target = `${SOFA_BASE}${path}`;
+  const key = process.env.SCRAPER_API_KEY;
+  if (key) return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(target)}`;
+  return target;
+}
 
 async function sfFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: HEADERS, next: { revalidate: 0 } });
+  const res = await fetch(buildUrl(path), {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+    },
+    next: { revalidate: 0 },
+  });
   if (!res.ok) throw new Error(`Sofascore ${path} → HTTP ${res.status}`);
   return res.json();
 }

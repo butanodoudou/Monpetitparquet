@@ -61,15 +61,14 @@
 
 ## [2024] Vercel Cron pour la sync des données sportives
 
-**Contexte** : api-sports.io a un quota de 100 req/jour (free tier). Les résultats des matchs sont connus en soirée.
+**Contexte** : Cron nightly pour calculer les scores fantasy à partir des performances réelles du soir.
 
 **Décision** : Un seul cron Vercel (`vercel.json`) qui appelle `/api/sync/results` chaque soir à 23h UTC.
 
 **Alternatives écartées** :
-- Webhook api-sports.io : non disponible sur le free tier.
-- Cron plus fréquent : dépasse le quota gratuit.
+- Cron plus fréquent : inutile, les matchs Pro A se jouent le soir.
 
-**Raison** : Respecte les contraintes du free tier, données fraîches chaque matin.
+**Raison** : Données fraîches chaque matin, coût zéro.
 
 ---
 
@@ -96,3 +95,33 @@
 - Shadcn/ui : overhead de setup et de customisation pour une UI aussi spécifique.
 
 **Raison** : Velocité, bundle minimal, contrôle total sur le design sombre/mobile.
+
+---
+
+## [2025-05] Migration api-sports.io → Sofascore
+
+**Contexte** : api-sports.io free tier limité à 100 req/jour, insuffisant pour syncer toute la saison. Sofascore couvre Pro A avec toutes les stats nécessaires au calcul fantasy (pts, ast, reb, stl, blk, to, 3pts) et ne nécessite pas de clé API.
+
+**Décision** : Remplacement complet de `lib/sports-api.ts` par des appels Sofascore. IDs en base = IDs Sofascore (rupture : reseed DB nécessaire).
+
+**Alternatives écartées** :
+- Rester sur api-sports.io payant : coût non justifié pour un projet perso.
+- LNB.fr / altRstat : API non documentée publiquement, endpoints non découvrables sans reverse-engineering.
+
+**Raison** : Gratuit, données complètes, 18 saisons d'historique disponibles.
+
+---
+
+## [2025-05] ScraperAPI comme proxy pour Sofascore
+
+**Contexte** : Sofascore est protégé par Cloudflare qui bloque toutes les requêtes serveur (Node.js et Edge Runtime Vercel) avec des challenges TLS/JS. Les headers seuls ne suffisent pas.
+
+**Décision** : Utiliser ScraperAPI (free tier : 1000 req/mois) comme proxy. L'URL Sofascore est encodée en paramètre : `https://api.scraperapi.com/?api_key={key}&url={sofascoreUrl}`. Usage estimé : ~160 req/mois (8 matchs × ~20 appels).
+
+**Alternatives écartées** :
+- Edge Runtime Vercel : même résultat, 403 challenge Cloudflare.
+- Proxy maison : maintenance, coût serveur.
+- Puppeteer/headless : trop lourd pour Vercel serverless.
+- GitHub Actions cron : complexité supplémentaire, moins intégré.
+
+**Raison** : Solution la plus simple, free tier largement suffisant, aucune maintenance.

@@ -8,7 +8,7 @@ Les joueurs drafte de vrais joueurs NBA… pardon, Pro A, et accumulent des poin
 - **Frontend** : Next.js 14 (App Router), React 18, Tailwind CSS, Zustand
 - **Backend** : Next.js API Routes (serverless), JWT maison
 - **Base de données** : Supabase (PostgreSQL + Realtime)
-- **Données sportives** : api-sports.io (Basketball API) — free tier : 100 req/jour
+- **Données sportives** : Sofascore (API non officielle) — pas de clé, via ScraperAPI pour contourner Cloudflare
 - **Déploiement** : Vercel (avec cron job Vercel)
 - **Auth** : JWT custom (pas Supabase Auth), bcryptjs pour le hash
 
@@ -33,15 +33,25 @@ NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 JWT_SECRET
-API_SPORTS_KEY
+SCRAPER_API_KEY        ← ScraperAPI (proxy Cloudflare pour Sofascore)
 CRON_SECRET
 ```
 
 ## Cron job
-- `/api/sync/results` — exécuté chaque jour à 23h UTC (Vercel cron) — synchronise les matchs du jour et calcule les scores fantasy
+- `/api/sync/results` — exécuté chaque jour à 23h UTC (Vercel cron) — synchronise les matchs des 48h et calcule les scores fantasy
+
+## Données sportives — Sofascore
+- Tournament ID : 156 (Pro A / Betclic Élite)
+- Season ID : 79100 (2025-2026)
+- Endpoints clés :
+  - Équipes : `/unique-tournament/156/season/79100/teams`
+  - Matchs récents : `/unique-tournament/156/season/79100/events/last/0`
+  - Stats joueurs : `/event/{id}/lineups`
+- IDs en base = IDs Sofascore (joueurs, équipes, matchs)
 
 ## Points d'attention
-- Le client Supabase est initialisé en **lazy** pour éviter les erreurs au build Vercel (pas de window/process côté build)
+- Sofascore est derrière Cloudflare : bloque Node.js et Edge Runtime Vercel → proxy via ScraperAPI obligatoire en prod
+- Le client Supabase est initialisé en **lazy** pour éviter les erreurs au build Vercel
 - Le `serviceKey` (service_role) contourne la RLS → uniquement utilisé dans les API Routes server-side
 - La RLS est activée sur toutes les tables mais les reads sont ouverts (anon) pour les subscriptions Realtime
 - Timer de draft côté client (45s) : tous les clients peuvent déclencher l'auto-pick, le serveur déduplique
