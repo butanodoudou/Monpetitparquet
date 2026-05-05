@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
-import { fetchGames, fetchGamePlayerStats, normalizeStatus } from '@/lib/sports-api';
+import { fetchRecentFinishedEvents, fetchEventLineups } from '@/lib/sports-api';
 import { computeFantasyScore } from '@/lib/fantasy';
 
 // Called by Vercel Cron (daily at 23h) or manually with secret
@@ -10,7 +10,6 @@ export async function GET(req: NextRequest) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
-
   return syncResults();
 }
 
@@ -27,73 +26,51 @@ async function syncResults() {
   const results = { matchesUpserted: 0, performancesUpserted: 0, errors: [] as string[] };
 
   try {
-    const games = await fetchGames();
-    let weekCounter = 1;
-    const weekMap = new Map<string, number>(); // date → week number (approximate grouping)
+    const events = await fetchRecentFinishedEvents();
 
-    // Sort by date and assign week numbers
-    const sorted = [...games].sort((a, b) => a.timestamp - b.timestamp);
-    let lastDate = '';
-    for (const g of sorted) {
-      const d = g.date.slice(0, 10);
-      if (!weekMap.has(d)) {
-        // New week if > 4 days gap
-        if (lastDate && daysDiff(lastDate, d) > 4) weekCounter++;
-        weekMap.set(d, weekCounter);
-        lastDate = d;
-      }
-    }
-
-    for (const game of games) {
-      const status = normalizeStatus(game.status.short);
-      const week = weekMap.get(game.date.slice(0, 10)) ?? 1;
-
+    for (const event of events) {
       await supabase.from('matches').upsert({
-        id: game.id,
-        home_team: game.teams.home.name,
-        home_team_id: game.teams.home.id,
-        away_team: game.teams.away.name,
-        away_team_id: game.teams.away.id,
-        home_score: game.scores.home.total,
-        away_score: game.scores.away.total,
-        match_date: new Date(game.timestamp * 1000).toISOString(),
-        week,
-        status,
-        season: game.league.season,
+        id: event.id,
+        home_team: event.homeTeam.name,
+        home_team_id: event.homeTeam.id,
+        away_team: event.awayTeam.name,
+        away_team_id: event.awayTeam.id,
+        home_score: event.homeScore?.current ?? null,
+        away_score: event.awayScore?.current ?? null,
+        match_date: new Date(event.startTimestamp * 1000).toISOString(),
+        week: event.round.round,
+        status: 'finished',
+        season: '2025-2026',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
       results.matchesUpserted++;
 
-      // Only fetch player stats for finished games not yet processed
-      if (status !== 'finished') continue;
-
       const { count } = await supabase
         .from('player_performances')
         .select('*', { count: 'exact', head: true })
-        .eq('match_id', game.id);
+        .eq('match_id', event.id);
 
-      if ((count ?? 0) > 0) continue; // already processed
+      if ((count ?? 0) > 0) continue;
 
       try {
-        const statsRows = await fetchGamePlayerStats(game.id);
+        const perfs = await fetchEventLineups(event.id, event.homeTeam.id, event.awayTeam.id);
 
-        for (const stat of statsRows) {
-          if (!stat.player?.id) continue;
-
-          const pts = stat.points ?? 0;
-          const ast = stat.assists ?? 0;
-          const reb = stat.totReb ?? 0;
-          const stl = stat.steals ?? 0;
-          const blk = stat.blocks ?? 0;
-          const tov = stat.turnovers ?? 0;
-          const thr = stat.tpm ?? 0;
-          const mins = parseInt(stat.min ?? '0') || 0;
+        for (const perf of perfs) {
+          const s = perf.statistics;
+          const pts = s.points ?? 0;
+          const ast = s.assists ?? 0;
+          const reb = s.rebounds ?? 0;
+          const stl = s.steals ?? 0;
+          const blk = s.blocks ?? 0;
+          const tov = s.turnovers ?? 0;
+          const thr = s.threePointsMade ?? 0;
+          const mins = Math.round((s.secondsPlayed ?? 0) / 60);
           const fs = computeFantasyScore(pts, ast, reb, stl, blk, tov, thr);
 
           await supabase.from('player_performances').upsert({
-            player_id: stat.player.id,
-            match_id: game.id,
-            team_id: stat.team?.id,
+            player_id: perf.player.id,
+            match_id: event.id,
+            team_id: perf.teamId,
             points: pts, assists: ast, rebounds: reb,
             steals: stl, blocks: blk, turnovers: tov,
             three_pointers: thr, minutes_played: mins,
@@ -102,11 +79,10 @@ async function syncResults() {
           results.performancesUpserted++;
         }
       } catch (e: any) {
-        results.errors.push(`Game ${game.id}: ${e.message}`);
+        results.errors.push(`Event ${event.id}: ${e.message}`);
       }
     }
 
-    // Recompute season averages
     await recomputeAverages(supabase);
 
   } catch (e: any) {
@@ -144,8 +120,4 @@ async function recomputeAverages(supabase: ReturnType<typeof db>) {
       updated_at: new Date().toISOString(),
     }).eq('id', p.id);
   }
-}
-
-function daysDiff(a: string, b: string): number {
-  return (new Date(b).getTime() - new Date(a).getTime()) / 86400000;
 }

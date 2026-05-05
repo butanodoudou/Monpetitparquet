@@ -6,7 +6,30 @@
       "WebFetch(domain:www.lnb.fr)",
       "WebFetch(domain:www.thesportsdb.com)",
       "WebFetch(domain:www.api-basketball.com)",
-      "WebFetch(domain:www.altrnet.xyz)"
+      "WebFetch(domain:www.altrnet.xyz)",
+      "WebFetch(domain:www.proballers.com)",
+      "WebFetch(domain:www.basketball-reference.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.sofascore.com)",
+      "Bash(npm run *)",
+      "Bash(Get-Content *)",
+      "Bash(.\\\\node_modules\\\\.bin\\\\next dev *)",
+      "Read(//mnt/c/Users/PC/Documents/repo_git/**)",
+      "Bash(./node_modules/.bin/next dev *)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\PC\\\\Documents\\\\repo_git\\\\Monpetitparquet'; npm run dev\" -WindowStyle Normal)",
+      "PowerShell(Start-Sleep -Seconds 15; try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/api/sync/test-sofascore\" -UseBasicParsing -TimeoutSec 30; $r.Content } catch { \"Erreur: $_\" })",
+      "PowerShell(Get-Process *)",
+      "PowerShell(netstat *)",
+      "PowerShell(npm run *)",
+      "PowerShell(Receive-Job *)",
+      "PowerShell(npm install *)",
+      "PowerShell($r = Invoke-WebRequest -Uri \"http://localhost:3000/api/sync/test-sofascore\" -UseBasicParsing -TimeoutSec 30; $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 10)",
+      "PowerShell(Get-Job *)",
+      "PowerShell(Get-WmiObject *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(curl.exe -s \"https://api.sofascore.com/api/v1/unique-tournament/156/season/79100/events/last/0\" 2>&1 | Select-Object -First 5)",
+      "Bash(rm \"/mnt/c/Users/PC/Documents/repo_git/Monpetitparquet/app/api/sync/test-sofascore/route.ts\")",
+      "Bash(rmdir \"/mnt/c/Users/PC/Documents/repo_git/Monpetitparquet/app/api/sync/test-sofascore\")"
     ]
   }
 }
