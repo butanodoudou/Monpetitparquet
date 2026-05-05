@@ -39,6 +39,7 @@ CRON_SECRET
 
 ## Cron job
 - `/api/sync/results` — exécuté chaque jour à 23h UTC (Vercel cron) — synchronise les matchs des 48h et calcule les scores fantasy
+- Backfill manuel : `POST /api/sync/results?secret=CRON_SECRET&round=N` — synchronise une journée spécifique
 
 ## Données sportives — Sofascore
 - Tournament ID : 156 (Pro A / Betclic Élite)
@@ -46,8 +47,11 @@ CRON_SECRET
 - Endpoints clés :
   - Équipes : `/unique-tournament/156/season/79100/teams`
   - Matchs récents : `/unique-tournament/156/season/79100/events/last/0`
+  - Matchs par journée : `/unique-tournament/156/season/79100/events/round/{N}`
   - Stats joueurs : `/event/{id}/lineups`
 - IDs en base = IDs Sofascore (joueurs, équipes, matchs)
+- **Attention** : le champ round dans les events s'appelle `roundInfo.round` (pas `round.round`)
+- Données en base : J25 à J28 backfillées (32 matchs, 693 performances)
 
 ## Points d'attention
 - Sofascore est derrière Cloudflare : bloque Node.js et Edge Runtime Vercel → proxy via ScraperAPI obligatoire en prod
@@ -55,3 +59,4 @@ CRON_SECRET
 - Le `serviceKey` (service_role) contourne la RLS → uniquement utilisé dans les API Routes server-side
 - La RLS est activée sur toutes les tables mais les reads sont ouverts (anon) pour les subscriptions Realtime
 - Timer de draft côté client (45s) : tous les clients peuvent déclencher l'auto-pick, le serveur déduplique
+- `authStore` : le `user` ET le `token` sont persistés en localStorage — une session sans `user` est purgée automatiquement au démarrage

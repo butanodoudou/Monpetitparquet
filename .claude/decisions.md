@@ -112,6 +112,20 @@
 
 ---
 
+## [2025-05] Persistance du user en localStorage (authStore)
+
+**Contexte** : Après un refresh de page, `token` était récupéré depuis `localStorage` mais `user` était toujours `null`. La page `/home` fait `if (!token || !user) return null`, ce qui donnait un écran sombre vide.
+
+**Décision** : Sauvegarder l'objet `user` en JSON dans `localStorage` au moment du `setAuth`. Au chargement du store, si `token` existe sans `user`, purger le token pour forcer un nouveau login.
+
+**Alternatives écartées** :
+- Endpoint `/api/auth/me` pour re-fetcher le user : requête réseau supplémentaire au démarrage, plus complexe.
+- Supprimer le guard `!user` dans home/page : le user est nécessaire pour afficher le dashboard (nom, avatar).
+
+**Raison** : Fix simple, zéro requête réseau, sessions incomplètes auto-purgées.
+
+---
+
 ## [2025-05] ScraperAPI comme proxy pour Sofascore
 
 **Contexte** : Sofascore est protégé par Cloudflare qui bloque toutes les requêtes serveur (Node.js et Edge Runtime Vercel) avec des challenges TLS/JS. Les headers seuls ne suffisent pas.
