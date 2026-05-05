@@ -44,7 +44,7 @@ export interface SofaPlayer {
 
 export interface SofaEvent {
   id: number;
-  round?: { round: number };
+  roundInfo?: { round: number };
   homeTeam: SofaTeam;
   awayTeam: SofaTeam;
   homeScore?: { current: number };
@@ -88,6 +88,13 @@ export async function fetchRecentFinishedEvents(): Promise<SofaEvent[]> {
   );
   const cutoff = Date.now() / 1000 - 48 * 3600;
   return data.events.filter(e => e.status.type === 'finished' && e.startTimestamp >= cutoff);
+}
+
+export async function fetchEventsByRound(round: number): Promise<SofaEvent[]> {
+  const data = await sfFetch<{ events: SofaEvent[] }>(
+    `/unique-tournament/${TOURNAMENT_ID}/season/${SEASON_ID}/events/round/${round}`
+  );
+  return data.events.filter(e => e.status.type === 'finished');
 }
 
 export async function fetchEventLineups(

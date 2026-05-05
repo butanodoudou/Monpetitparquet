@@ -1,32 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
-import { fetchRecentFinishedEvents, fetchEventLineups } from '@/lib/sports-api';
+import { fetchRecentFinishedEvents, fetchEventsByRound, fetchEventLineups } from '@/lib/sports-api';
 import { computeFantasyScore } from '@/lib/fantasy';
 
 // Called by Vercel Cron (daily at 23h) or manually with secret
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('authorization')?.replace('Bearer ', '') ??
-    new URL(req.url).searchParams.get('secret');
+  const url = new URL(req.url);
+  const secret = req.headers.get('authorization')?.replace('Bearer ', '') ?? url.searchParams.get('secret');
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
-  return syncResults();
+  const round = url.searchParams.get('round');
+  return syncResults(round ? parseInt(round) : undefined);
 }
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret') ?? new URL(req.url).searchParams.get('secret');
+  const url = new URL(req.url);
+  const secret = req.headers.get('x-cron-secret') ?? url.searchParams.get('secret');
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
-  return syncResults();
+  const round = url.searchParams.get('round');
+  return syncResults(round ? parseInt(round) : undefined);
 }
 
-async function syncResults() {
+async function syncResults(round?: number) {
   const supabase = db();
   const results = { matchesUpserted: 0, performancesUpserted: 0, errors: [] as string[] };
 
   try {
-    const events = await fetchRecentFinishedEvents();
+    const events = round
+      ? await fetchEventsByRound(round)
+      : await fetchRecentFinishedEvents();
 
     for (const event of events) {
       await supabase.from('matches').upsert({
@@ -38,7 +43,7 @@ async function syncResults() {
         home_score: event.homeScore?.current ?? null,
         away_score: event.awayScore?.current ?? null,
         match_date: new Date(event.startTimestamp * 1000).toISOString(),
-        week: event.round?.round ?? 0,
+        week: event.roundInfo?.round ?? 0,
         status: 'finished',
         season: '2025-2026',
         updated_at: new Date().toISOString(),
