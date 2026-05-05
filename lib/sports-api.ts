@@ -44,7 +44,7 @@ export interface SofaPlayer {
 
 export interface SofaEvent {
   id: number;
-  round: { round: number };
+  round?: { round: number };
   homeTeam: SofaTeam;
   awayTeam: SofaTeam;
   homeScore?: { current: number };

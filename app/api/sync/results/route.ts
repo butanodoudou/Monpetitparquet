@@ -38,7 +38,7 @@ async function syncResults() {
         home_score: event.homeScore?.current ?? null,
         away_score: event.awayScore?.current ?? null,
         match_date: new Date(event.startTimestamp * 1000).toISOString(),
-        week: event.round.round,
+        week: event.round?.round ?? 0,
         status: 'finished',
         season: '2025-2026',
         updated_at: new Date().toISOString(),
