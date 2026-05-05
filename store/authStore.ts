@@ -20,9 +20,14 @@ function loadFromStorage<T>(key: string): T | null {
   try { return JSON.parse(localStorage.getItem(key) ?? 'null'); } catch { return null; }
 }
 
+const _token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+const _user = loadFromStorage<AuthUser>('user');
+// Session incomplète (token sans user) → on purge pour forcer un nouveau login
+if (_token && !_user && typeof window !== 'undefined') localStorage.removeItem('token');
+
 export const useAuthStore = create<AuthState>(set => ({
-  token: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
-  user: loadFromStorage<AuthUser>('user'),
+  token: (_token && _user) ? _token : null,
+  user: _user,
   setAuth: (token, user) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('token', token);
