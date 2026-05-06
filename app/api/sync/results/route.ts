@@ -61,6 +61,19 @@ async function syncResults(round?: number) {
         const perfs = await fetchEventLineups(event.id, event.homeTeam.id, event.awayTeam.id);
 
         for (const perf of perfs) {
+          // Upsert player from lineup data to handle transfers/new players not in the squad roster
+          const nameParts = perf.player.name.split(' ');
+          await supabase.from('players').upsert({
+            id: perf.player.id,
+            name: perf.player.name,
+            first_name: nameParts[0],
+            last_name: nameParts.slice(1).join(' '),
+            team_id: perf.teamId,
+            team: event.homeTeam.id === perf.teamId ? event.homeTeam.name : event.awayTeam.name,
+            photo_url: `https://img.sofascore.com/api/v1/player/${perf.player.id}/image`,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id', ignoreDuplicates: false });
+
           const s = perf.statistics;
           const pts = s.points ?? 0;
           const ast = s.assists ?? 0;
@@ -72,7 +85,7 @@ async function syncResults(round?: number) {
           const mins = Math.round((s.secondsPlayed ?? 0) / 60);
           const fs = computeFantasyScore(pts, ast, reb, stl, blk, tov, thr);
 
-          await supabase.from('player_performances').upsert({
+          const { error: perfError } = await supabase.from('player_performances').upsert({
             player_id: perf.player.id,
             match_id: event.id,
             team_id: perf.teamId,
@@ -81,7 +94,12 @@ async function syncResults(round?: number) {
             three_pointers: thr, minutes_played: mins,
             fantasy_score: fs,
           }, { onConflict: 'player_id,match_id' });
-          results.performancesUpserted++;
+
+          if (perfError) {
+            results.errors.push(`Perf ${perf.player.id}@${event.id}: ${perfError.message}`);
+          } else {
+            results.performancesUpserted++;
+          }
         }
       } catch (e: any) {
         results.errors.push(`Event ${event.id}: ${e.message}`);
