@@ -48,6 +48,13 @@ export default function DraftPage() {
 
   useEffect(() => { if (!token) router.replace('/auth'); else load(); }, [token, leagueId]);
 
+  // Polling fallback: refresh every 5s in case Realtime is not enabled
+  useEffect(() => {
+    if (!token || isDone) return;
+    const poll = setInterval(() => load(), 5000);
+    return () => clearInterval(poll);
+  }, [token, leagueId, isDone]);
+
   // Supabase Realtime: listen to draft_picks and leagues changes
   useEffect(() => {
     const channel = getSupabase().channel(`draft-${leagueId}`)
@@ -89,12 +96,11 @@ export default function DraftPage() {
       setTimeLeft(left);
       if (left === 0 && !autoSentRef.current) {
         autoSentRef.current = true;
-        // Any client can trigger auto-pick; server deduplicates
         fetch(`/api/draft/${leagueId}/pick`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ auto: true }),
-        });
+        }).then(() => load());
       }
     }, 500);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
@@ -110,6 +116,7 @@ export default function DraftPage() {
         body: JSON.stringify({ playerId }),
       });
       if (!r.ok) { const d = await r.json(); alert(d.error); }
+      else { await load(); }
     } finally { setPicking(false); }
   }, [leagueId, token, picking]);
 
