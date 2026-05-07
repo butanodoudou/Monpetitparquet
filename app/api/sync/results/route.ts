@@ -68,7 +68,6 @@ async function syncResults(round?: number) {
             name: perf.player.name,
             first_name: nameParts[0],
             last_name: nameParts.slice(1).join(' '),
-            team_id: perf.teamId,
             team: event.homeTeam.id === perf.teamId ? event.homeTeam.name : event.awayTeam.name,
             photo_url: `https://img.sofascore.com/api/v1/player/${perf.player.id}/image`,
             updated_at: new Date().toISOString(),
@@ -106,41 +105,9 @@ async function syncResults(round?: number) {
       }
     }
 
-    await recomputeAverages(supabase);
-
   } catch (e: any) {
     results.errors.push(e.message);
   }
 
   return NextResponse.json(results);
-}
-
-async function recomputeAverages(supabase: ReturnType<typeof db>) {
-  const { data: players } = await supabase.from('players').select('id');
-  if (!players?.length) return;
-
-  for (const p of players) {
-    const { data: perfs } = await supabase
-      .from('player_performances')
-      .select('points, assists, rebounds, steals, blocks, turnovers, three_pointers, fantasy_score')
-      .eq('player_id', p.id);
-
-    if (!perfs?.length) continue;
-    const n = perfs.length;
-    const avg = (key: keyof typeof perfs[0]) =>
-      Math.round((perfs.reduce((s, r) => s + ((r[key] as number) ?? 0), 0) / n) * 10) / 10;
-
-    await supabase.from('players').update({
-      avg_points: avg('points'),
-      avg_assists: avg('assists'),
-      avg_rebounds: avg('rebounds'),
-      avg_steals: avg('steals'),
-      avg_blocks: avg('blocks'),
-      avg_turnovers: avg('turnovers'),
-      avg_three_pointers: avg('three_pointers'),
-      season_avg_fantasy: avg('fantasy_score'),
-      games_played: n,
-      updated_at: new Date().toISOString(),
-    }).eq('id', p.id);
-  }
 }
