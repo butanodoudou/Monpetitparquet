@@ -76,7 +76,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Build member lookup
   const memberMap: Record<string, { team_name: string; username: string; avatar_color: string }> = {};
   for (const m of members ?? []) {
-    const u = m.user as { username: string; avatar_color: string } | null;
+    const u = m.user as unknown as { username: string; avatar_color: string } | null;
     memberMap[m.user_id] = {
       team_name: m.team_name ?? '',
       username: u?.username ?? '',
