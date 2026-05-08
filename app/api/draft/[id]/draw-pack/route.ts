@@ -2,47 +2,59 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import {
-  AUCTION_PACK_COMPOSITION, DRAFT_BUDGET,
-  assignAuctionTier, computeAuctionTierThresholds, getRemainingRosterSlots,
-  POSITION_GROUP_MAP,
-  type AuctionTier, type PositionGroup,
+  AUCTION_PACK_COMPOSITION, DRAFT_BUDGET, PACK_LIFETIME_HOURS, TIER_MIN_BIDS,
+  assignAuctionTier, computeAuctionTierThresholds,
+  type AuctionTier,
 } from '@/lib/fantasy';
 
 function generateBotBids(
-  players: { id: number; tier: AuctionTier; position: string }[],
+  players: { id: number; tier: AuctionTier }[],
   credits: number,
-  remainingPicks: number,
-  remainingSlots: Record<PositionGroup, number>,
 ): Record<number, number> {
-  if (credits <= 0) return Object.fromEntries(players.map(p => [p.id, 0]));
+  const packSize = players.length;
 
-  const avgPerPick = Math.max(1, credits / Math.max(1, remainingPicks));
+  // Spend ~20% of remaining budget per pack
+  const packBudget = Math.max(0, Math.floor(credits * 0.20));
+  const avgPerPlayer = packBudget / packSize;
+
   const tierMultipliers: Record<AuctionTier, [number, number]> = {
-    elite:   [1.4, 2.2],
-    star:    [0.7, 1.3],
-    basique: [0.2, 0.6],
+    elite:   [1.2, 2.0],
+    star:    [0.8, 1.4],
+    basique: [0.0, 0.3],
   };
 
   const bids: Record<number, number> = {};
   let totalBid = 0;
 
   for (const player of players) {
-    const group = POSITION_GROUP_MAP[player.position] as PositionGroup | undefined;
-    if (!group || remainingSlots[group] <= 0) {
+    const tierMin = TIER_MIN_BIDS[player.tier];
+    if (credits < tierMin) {
       bids[player.id] = 0;
       continue;
     }
     const [min, max] = tierMultipliers[player.tier];
     const mult = min + Math.random() * (max - min);
-    const raw = Math.round(avgPerPick * mult);
-    bids[player.id] = Math.max(1, raw);
+    const raw = Math.round(avgPerPlayer * mult / 1000) * 1000;
+    bids[player.id] = Math.max(tierMin, raw);
     totalBid += bids[player.id];
   }
 
   if (totalBid > credits) {
-    const scale = credits / totalBid;
+    // Scale down excess above minimums
+    const excess = totalBid - Object.values(bids).reduce((s, v) => s + (v === 0 ? 0 : TIER_MIN_BIDS['basique']), 0);
+    const budget = credits;
     for (const id in bids) {
-      bids[Number(id)] = Math.max(0, Math.floor(bids[Number(id)] * scale));
+      const pid = Number(id);
+      const tier = players.find(p => p.id === pid)?.tier ?? 'basique';
+      const tierMin = TIER_MIN_BIDS[tier];
+      if (bids[pid] <= tierMin) continue;
+      const over = bids[pid] - tierMin;
+      bids[pid] = tierMin + Math.floor(over * (budget / Math.max(1, totalBid)) / 1000) * 1000;
+    }
+    // Final safety check
+    const newTotal = Object.values(bids).reduce((s, v) => s + v, 0);
+    if (newTotal > credits) {
+      for (const id in bids) bids[Number(id)] = TIER_MIN_BIDS[players.find(p => p.id === Number(id))?.tier ?? 'basique'];
     }
   }
 
@@ -58,7 +70,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: league } = await supabase
     .from('leagues')
-    .select('commissioner_id, draft_status, picks_per_team')
+    .select('commissioner_id, draft_status')
     .eq('id', leagueId)
     .single();
 
@@ -81,6 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq('league_id', leagueId);
 
   const packNumber = (packCount ?? 0) + 1;
+  const expiresAt = new Date(Date.now() + PACK_LIFETIME_HOURS * 60 * 60 * 1000).toISOString();
 
   const { data: allPlayers } = await supabase
     .from('players')
@@ -126,13 +139,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       pack_number: packNumber,
       player_ids: selected.map(p => p.id),
       status: 'bidding',
+      expires_at: expiresAt,
     })
     .select('id')
     .single();
 
   if (!newPack) return NextResponse.json({ error: 'Erreur création pack' }, { status: 500 });
-
-  const picksPerTeam = league.picks_per_team ?? 8;
 
   const { data: members } = await supabase
     .from('league_members')
@@ -142,20 +154,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const botMembers = (members ?? []).filter(m => ((m.user as any)?.email ?? '').endsWith('@system.internal'));
 
   for (const bot of botMembers) {
-    const { data: botRoster } = await supabase
-      .from('team_players')
-      .select('player_id, player:players(position)')
-      .eq('league_id', leagueId)
-      .eq('user_id', bot.user_id);
-
     const botCredits = bot.draft_credits ?? DRAFT_BUDGET;
-    const botPlayerCount = botRoster?.length ?? 0;
-    const remainingPicks = Math.max(1, picksPerTeam - botPlayerCount);
-    const botRemainingSlots = getRemainingRosterSlots(
-      (botRoster ?? []).map(tp => ({ position: (tp.player as any)?.position ?? '' }))
-    );
-
-    const botBids = generateBotBids(selected, botCredits, remainingPicks, botRemainingSlots);
+    const botBids = generateBotBids(selected, botCredits);
 
     const bidRows = selected.map(p => ({
       pack_id: newPack.id,

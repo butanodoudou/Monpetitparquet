@@ -32,7 +32,7 @@ export function buildSnakeOrder(userIds: string[], picksPerTeam: number): string
   return order;
 }
 
-// ─── Mystery Draft ────────────────────────────────────────────
+// ─── Mystery Draft ───────────────────────────────────────────────────────────
 
 export type PlayerTier = 'elite' | 'gold' | 'silver' | 'bronze';
 
@@ -43,7 +43,9 @@ export const PACK_PRICES: Record<PlayerTier, number> = {
   bronze: 5,
 };
 
-export const DRAFT_BUDGET = 100;
+export const DRAFT_BUDGET = 500_000;
+export const ROSTER_SIZE = 8;
+export const PACK_LIFETIME_HOURS = 12;
 
 // Probability of drawing each tier when opening a given pack type
 export const PACK_WEIGHTS: Record<PlayerTier, Record<PlayerTier, number>> = {
@@ -94,7 +96,7 @@ export function computeTierThresholds(avgFantasies: number[]): { p5: number; p20
   };
 }
 
-// ─── Position groups ────────────────────────────────────────────
+// ─── Position groups ────────────────────────────────────────────────
 
 export type PositionGroup = 'arriere' | 'sf' | 'grand';
 
@@ -146,9 +148,15 @@ export function computeDefaultStarters(
   return starters;
 }
 
-// ─── Auction Draft ─────────────────────────────────────────────
+// ─── Auction Draft ─────────────────────────────────────────────────────
 
 export type AuctionTier = 'elite' | 'star' | 'basique';
+
+export const TIER_MIN_BIDS: Record<AuctionTier, number> = {
+  elite: 30_000,
+  star: 10_000,
+  basique: 0,
+};
 
 export const AUCTION_PACK_COMPOSITION: AuctionTier[] = [
   'elite', 'star', 'star', 'basique', 'basique'
