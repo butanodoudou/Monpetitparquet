@@ -9,7 +9,7 @@ import BottomNav from '@/components/BottomNav';
 
 interface Member {
   user_id: string; username: string; team_name: string; avatar_color: string;
-  total_score: number; player_count: number;
+  total_score: number; player_count: number; is_bot?: boolean;
 }
 interface League {
   id: string; name: string; invite_code: string; draft_status: string;
@@ -37,6 +37,7 @@ export default function LeagueDetailPage() {
   const [tab, setTab] = useState<Tab>('classement');
   const [starting, setStarting] = useState(false);
   const [generatingSchedule, setGeneratingSchedule] = useState(false);
+  const [addingBot, setAddingBot] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -72,6 +73,14 @@ export default function LeagueDetailPage() {
     else { const d = await r.json(); alert(d.error); setStarting(false); }
   };
 
+  const addBot = async () => {
+    setAddingBot(true);
+    const r = await fetch(`/api/leagues/${id}/add-bot`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    if (r.ok) await load();
+    else { const d = await r.json(); alert(d.error); }
+    setAddingBot(false);
+  };
+
   const generateSchedule = async () => {
     setGeneratingSchedule(true);
     const r = await fetch(`/api/leagues/${id}/generate-schedule`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
@@ -91,6 +100,7 @@ export default function LeagueDetailPage() {
 
   const isCommissioner = user?.id === league.commissioner_id;
   const draftDone = league.draft_status === 'completed';
+  const botCount = league.members.filter(m => m.is_bot).length;
   const myMatchup = weekData?.matchups.find(m => m.home.user_id === user?.id || m.away.user_id === user?.id);
 
   const tabs: Tab[] = draftDone ? ['duels', 'classement', 'infos'] : ['classement', 'draft', 'infos'];
@@ -118,10 +128,20 @@ export default function LeagueDetailPage() {
               <div className="bg-slate-700/50 rounded-xl p-3">
                 {isCommissioner ? (
                   <div className="space-y-2">
-                    <p className="text-slate-300 text-sm">{league.members.length < 2 ? 'Invite au moins 1 ami avant de lancer la draft.' : 'Lance la draft quand tout le monde est prêt !'}</p>
-                    <button className="btn-primary py-2 text-sm" onClick={startDraft} disabled={starting || league.members.length < 2}>
-                      {starting ? '…' : '🚀 Lancer la draft'}
-                    </button>
+                    <p className="text-slate-300 text-sm">
+                      {league.members.length < 2 ? 'Invite un ami ou ajoute un bot pour commencer.' : 'Lance la draft quand tout le monde est prêt !'}
+                    </p>
+                    <div className="flex gap-2">
+                      {botCount < 3 && (
+                        <button className="btn-secondary py-2 text-sm flex-1" onClick={addBot} disabled={addingBot}>
+                          {addingBot ? '…' : `🤖 Ajouter un bot (${botCount}/3)`}
+                        </button>
+                      )}
+                      <button className="btn-primary py-2 text-sm flex-1" onClick={startDraft}
+                        disabled={starting || league.members.length < 2}>
+                        {starting ? '…' : '🚀 Lancer'}
+                      </button>
+                    </div>
                   </div>
                 ) : <p className="text-slate-400 text-sm">En attente que le commissaire lance la draft…</p>}
               </div>
