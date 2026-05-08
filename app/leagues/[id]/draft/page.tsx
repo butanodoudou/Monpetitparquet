@@ -26,6 +26,8 @@ interface DraftState {
   draft_status: string;
   myCredits: number;
   myPlayers: { id: number; name: string; position: string; tier?: PlayerTier }[];
+  isCommissioner: boolean;
+  hasBots: boolean;
 }
 
 type Phase = 'lobby' | 'opening' | 'picking' | 'done';
@@ -47,6 +49,7 @@ export default function DraftPage() {
   const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [picking, setPicking] = useState(false);
+  const [botDrafting, setBotDrafting] = useState(false);
   const [lastPicked, setLastPicked] = useState<Player | null>(null);
   const [error, setError] = useState('');
 
@@ -68,6 +71,8 @@ export default function DraftPage() {
       draft_status: league.draft_status,
       myCredits: myMember?.draft_credits ?? DRAFT_BUDGET,
       myPlayers: myTeam.players ?? [],
+      isCommissioner: league.commissioner_id === user?.id,
+      hasBots: (league.members ?? []).some((m: any) => m.is_bot),
     });
     setLoading(false);
   }, [token, leagueId, user?.id]);
@@ -85,6 +90,24 @@ export default function DraftPage() {
       .subscribe();
     return () => { getSupabase().removeChannel(channel); };
   }, [leagueId]);
+
+  const draftBots = async () => {
+    if (!token) return;
+    setBotDrafting(true);
+    setError('');
+    const res = await fetch(`/api/leagues/${leagueId}/bot-draft`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setBotDrafting(false);
+    if (!res.ok) { setError(data.error); return; }
+    if (data.draftComplete) {
+      router.replace(`/leagues/${leagueId}/team`);
+    } else {
+      await load();
+    }
+  };
 
   const openPack = async (tier: PlayerTier) => {
     if (!token || !state) return;
@@ -240,6 +263,19 @@ export default function DraftPage() {
                 <div className="mt-4 text-center text-xs text-slate-600">
                   Chaque pack révèle 3 joueurs · Tu en gardes 1
                 </div>
+
+                {state.isCommissioner && state.hasBots && (
+                  <motion.button
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                    onClick={draftBots}
+                    disabled={botDrafting}
+                    className="mt-4 w-full py-2.5 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-300 text-sm font-semibold flex items-center justify-center gap-2 active:bg-slate-700"
+                  >
+                    {botDrafting
+                      ? <><span className="animate-spin">⚙️</span> Bots en train de drafter…</>
+                      : '🤖 Faire drafter les bots'}
+                  </motion.button>
+                )}
               </>
             )}
           </motion.div>

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const { data: members } = await supabase
     .from('league_members')
-    .select('*, user:users(username, avatar_color)')
+    .select('*, user:users(username, avatar_color, email)')
     .eq('league_id', params.id)
     .order('draft_position', { ascending: true });
 
@@ -54,6 +54,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       total_score: Math.round(totalScore * 10) / 10,
       username: (m.user as any)?.username,
       avatar_color: (m.user as any)?.avatar_color,
+      is_bot: ((m.user as any)?.email ?? '').endsWith('@system.internal'),
     };
   }));
 
