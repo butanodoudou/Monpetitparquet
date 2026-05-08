@@ -31,7 +31,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Crédits insuffisants' }, { status: 400 });
   }
 
-  // Check if roster is already full
   const { count: myCount } = await supabase
     .from('team_players')
     .select('*', { count: 'exact', head: true })
@@ -42,7 +41,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Roster complet' }, { status: 400 });
   }
 
-  // Check no active open offer for this user
   const { data: existingOffer } = await supabase
     .from('draft_pack_offers')
     .select('id, player_ids, tier, credits_spent')
@@ -52,7 +50,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .maybeSingle();
 
   if (existingOffer) {
-    // Return existing offer
     const { data: players } = await supabase
       .from('players')
       .select('id, name, team, position, jersey_number, photo_url, avg_points, avg_assists, avg_rebounds, season_avg_fantasy')
@@ -70,7 +67,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     });
   }
 
-  // Get all player fantasy averages for tier thresholds
   const { data: allPlayers } = await supabase
     .from('players')
     .select('id, name, team, position, jersey_number, photo_url, avg_points, avg_assists, avg_rebounds, season_avg_fantasy');
@@ -79,7 +75,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { p5, p20, p50 } = computeTierThresholds(allPlayers.map(p => p.season_avg_fantasy));
 
-  // Get drafted + reserved player IDs
   const [{ data: drafted }, { data: activeOffers }] = await Promise.all([
     supabase.from('team_players').select('player_id').eq('league_id', leagueId),
     supabase.from('draft_pack_offers').select('player_ids').eq('league_id', leagueId).is('chosen_player_id', null),
@@ -94,7 +89,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .filter(p => !unavailable.has(p.id))
     .map(p => ({ ...p, tier: assignTier(p.season_avg_fantasy, p5, p20, p50) }));
 
-  // Draw 3 players: weighted random tier per slot
   const selected: typeof available = [];
   const usedIds = new Set<number>();
 
@@ -102,7 +96,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     let targetTier = weightedRandom(PACK_WEIGHTS[tier]);
     let pool = available.filter(p => p.tier === targetTier && !usedIds.has(p.id));
 
-    // Fallback: adjacent tier if pool empty
     if (!pool.length) {
       const fallbackOrder: PlayerTier[] = ['gold', 'silver', 'bronze', 'elite'];
       for (const fb of fallbackOrder) {
