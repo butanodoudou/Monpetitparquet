@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
-import { fetchTeams, fetchPlayers, normalizePosition, LEAGUE_ID } from '@/lib/sports-api';
+import { fetchTeams, fetchTeamPlayers, normalizePosition } from '@/lib/sports-api';
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-cron-secret') ?? new URL(req.url).searchParams.get('secret');
@@ -12,52 +12,41 @@ export async function POST(req: NextRequest) {
   const results = { teams: 0, players: 0, errors: [] as string[] };
 
   try {
-    // 1. Upsert teams
-    const teamsData = await fetchTeams();
-    for (const { team } of teamsData) {
-      if (team.national) continue;
+    const teams = await fetchTeams();
+
+    for (const team of teams) {
       await supabase.from('betclic_teams').upsert(
-        { id: team.id, name: team.name, logo_url: team.logo },
+        {
+          id: team.id,
+          name: team.name,
+          logo_url: `https://img.sofascore.com/api/v1/team/${team.id}/image`,
+        },
         { onConflict: 'id' }
       );
       results.teams++;
-    }
 
-    // 2. Upsert players per team
-    for (const { team } of teamsData) {
-      if (team.national) continue;
-      let page = 1;
-      while (true) {
-        const playersData = await fetchPlayers(team.id, page);
-        if (!playersData.length) break;
+      const players = await fetchTeamPlayers(team.id);
 
-        for (const { player } of playersData) {
-          // leagues is keyed by league id (number or string depending on API version)
-          const leagueData =
-            player.leagues?.[LEAGUE_ID] ?? player.leagues?.[String(LEAGUE_ID)];
-          if (!leagueData) continue;
-
-          await supabase.from('players').upsert({
-            id: player.id,
-            name: `${player.firstname} ${player.lastname}`.trim(),
-            first_name: player.firstname,
-            last_name: player.lastname,
-            team: team.name,
-            team_id: team.id,
-            position: normalizePosition(leagueData.position),
-            jersey_number: leagueData.jersey ?? null,
-            nationality: player.nationality ?? null,
-            height: player.height?.meters ?? null,
-            weight: player.weight?.kilograms ?? null,
-            birth_date: player.birth?.date ?? null,
-            photo_url: player.photo ?? null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'id' });
-          results.players++;
-        }
-
-        if (playersData.length < 20) break;
-        page++;
+      for (const player of players) {
+        const nameParts = player.name.split(' ');
+        await supabase.from('players').upsert({
+          id: player.id,
+          name: player.name,
+          first_name: nameParts[0],
+          last_name: nameParts.slice(1).join(' '),
+          team: team.name,
+          team_id: team.id,
+          position: normalizePosition(player.position),
+          jersey_number: player.jerseyNumber ?? null,
+          nationality: player.nationality ?? null,
+          height: player.height ? (player.height / 100).toFixed(2) : null,
+          birth_date: player.dateOfBirthTimestamp
+            ? new Date(player.dateOfBirthTimestamp * 1000).toISOString().slice(0, 10)
+            : null,
+          photo_url: `https://img.sofascore.com/api/v1/player/${player.id}/image`,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+        results.players++;
       }
     }
   } catch (e: any) {
