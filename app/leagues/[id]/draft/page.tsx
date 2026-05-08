@@ -5,7 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { useAuthStore } from '@/store/authStore';
 import { getSupabase } from '@/lib/supabase';
-import { PACK_PRICES, DRAFT_BUDGET, TIER_CONFIG, type PlayerTier } from '@/lib/fantasy';
+import {
+  PACK_PRICES, DRAFT_BUDGET, TIER_CONFIG,
+  POSITION_GROUP_MAP, ROSTER_SLOTS, GROUP_LABELS,
+  type PlayerTier, type PositionGroup,
+} from '@/lib/fantasy';
 
 interface Player {
   id: number;
@@ -79,7 +83,6 @@ export default function DraftPage() {
 
   useEffect(() => { if (!token) router.replace('/auth'); else load(); }, [token]);
 
-  // Supabase Realtime: listen for draft completion
   useEffect(() => {
     const channel = getSupabase()
       .channel(`draft-mystery-${leagueId}`)
@@ -132,7 +135,6 @@ export default function DraftPage() {
     setRejectedIds(new Set());
     setPhase('opening');
 
-    // Staggered card reveals
     [400, 900, 1400].forEach((delay, i) => {
       setTimeout(() => setRevealed(r => { const n = [...r]; n[i] = true; return n; }), delay);
     });
@@ -189,15 +191,32 @@ export default function DraftPage() {
         </div>
       </div>
 
+      {/* Position slots */}
+      <div className="px-4 pt-3 flex gap-2">
+        {(['arriere', 'sf', 'grand'] as PositionGroup[]).map(group => {
+          const filled = state.myPlayers.filter(p => POSITION_GROUP_MAP[p.position] === group).length;
+          const total = ROSTER_SLOTS[group];
+          const full = filled >= total;
+          return (
+            <div key={group} className={`flex-1 rounded-xl px-2 py-2 text-center transition-colors ${full ? 'bg-green-500/10 border border-green-500/30' : 'bg-slate-800 border border-slate-700'}`}>
+              <div className={`text-[10px] font-bold uppercase tracking-wide mb-1 ${full ? 'text-green-400' : 'text-slate-500'}`}>{GROUP_LABELS[group]}</div>
+              <div className="flex gap-1 justify-center">
+                {Array.from({ length: total }).map((_, i) => (
+                  <div key={i} className={`w-2 h-2 rounded-full ${i < filled ? (full ? 'bg-green-400' : 'bg-brand') : 'bg-slate-700'}`} />
+                ))}
+              </div>
+              <div className={`text-xs font-black mt-1 ${full ? 'text-green-400' : 'text-slate-300'}`}>{filled}/{total}</div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Roster chips */}
-      <div className="px-4 pt-3 flex gap-1.5 flex-wrap">
+      <div className="px-4 pt-2 flex gap-1.5 flex-wrap">
         {state.myPlayers.map(p => (
           <span key={p.id} className={`text-xs px-2 py-1 rounded-lg font-semibold ${TIER_CONFIG[p.tier ?? 'bronze'].color} bg-slate-800`}>
             {TIER_EMOJI[p.tier ?? 'bronze']} {p.name.split(' ').pop()}
           </span>
-        ))}
-        {Array.from({ length: Math.max(0, state.picks_per_team - state.myPlayers.length) }).map((_, i) => (
-          <span key={i} className="text-xs px-3 py-1 rounded-lg bg-slate-800 border border-dashed border-slate-600 text-slate-600">?</span>
         ))}
       </div>
 
