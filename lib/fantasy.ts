@@ -43,7 +43,8 @@ export const PACK_PRICES: Record<PlayerTier, number> = {
   bronze: 5,
 };
 
-export const DRAFT_BUDGET = 100;
+export const DRAFT_BUDGET = 500_000;
+export const MIN_BID = 10_000;
 
 // Probability of drawing each tier when opening a given pack type
 export const PACK_WEIGHTS: Record<PlayerTier, Record<PlayerTier, number>> = {

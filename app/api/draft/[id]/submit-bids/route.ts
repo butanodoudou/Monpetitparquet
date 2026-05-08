@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
+import { MIN_BID, DRAFT_BUDGET } from '@/lib/fantasy';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -34,7 +35,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!pack) return NextResponse.json({ error: 'Aucun pack en cours' }, { status: 400 });
 
   const packPlayerIds = pack.player_ids as number[];
-  const credits = member.draft_credits ?? 100;
+  const credits = member.draft_credits ?? DRAFT_BUDGET;
+  const canAffordMin = credits >= MIN_BID * packPlayerIds.length;
 
   let totalBid = 0;
   for (const playerId of packPlayerIds) {
@@ -42,11 +44,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!Number.isInteger(amount) || amount < 0) {
       return NextResponse.json({ error: 'Enchère invalide' }, { status: 400 });
     }
+    if (canAffordMin && amount > 0 && amount < MIN_BID) {
+      return NextResponse.json({ error: `Mise minimum ${MIN_BID.toLocaleString()}$` }, { status: 400 });
+    }
     totalBid += amount;
   }
 
   if (totalBid > credits) {
-    return NextResponse.json({ error: `Budget insuffisant (${credits} crédits disponibles)` }, { status: 400 });
+    return NextResponse.json({ error: `Budget insuffisant (${credits.toLocaleString()}$ disponibles)` }, { status: 400 });
   }
 
   const bidRows = packPlayerIds.map(playerId => ({

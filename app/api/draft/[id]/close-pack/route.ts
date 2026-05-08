@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import { POSITION_GROUP_MAP, getRemainingRosterSlots, type PositionGroup } from '@/lib/fantasy';
+import { MIN_BID, AUCTION_PACK_COMPOSITION } from '@/lib/fantasy';
 import { buildRoundRobin } from '@/lib/schedule';
 
 const SEASON_WEEKS = 30;
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: league } = await supabase
     .from('leagues')
-    .select('commissioner_id, draft_status, picks_per_team')
+    .select('commissioner_id, draft_status')
     .eq('id', leagueId)
     .single();
 
@@ -31,27 +31,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   if (!pack) return NextResponse.json({ error: 'Aucun pack en cours' }, { status: 400 });
 
-  const [{ data: allBids }, { data: packPlayers }, { data: members }, { data: allTeamPlayers }] = await Promise.all([
+  const [{ data: allBids }, { data: packPlayers }, { data: members }] = await Promise.all([
     supabase.from('auction_bids').select('user_id, player_id, amount, submitted_at').eq('pack_id', pack.id),
     supabase.from('players').select('id, name, position').in('id', pack.player_ids as number[]),
     supabase.from('league_members').select('user_id, draft_credits, user:users(username)').eq('league_id', leagueId),
-    supabase.from('team_players').select('user_id, player_id, player:players(position)').eq('league_id', leagueId),
   ]);
 
   const playerMap = new Map((packPlayers ?? []).map(p => [p.id, p]));
 
-  // Initialize per-user tracking
   const creditsMap: Record<string, number> = {};
-  const slotsMap: Record<string, Record<PositionGroup, number>> = {};
   const usernameMap: Record<string, string> = {};
 
   for (const m of (members ?? [])) {
-    creditsMap[m.user_id] = m.draft_credits ?? 100;
+    creditsMap[m.user_id] = m.draft_credits ?? 500_000;
     usernameMap[m.user_id] = (m.user as any)?.username ?? '?';
-    const userPlayers = (allTeamPlayers ?? []).filter(tp => tp.user_id === m.user_id);
-    slotsMap[m.user_id] = getRemainingRosterSlots(
-      userPlayers.map(tp => ({ position: (tp.player as any)?.position ?? '' }))
-    );
   }
 
   const winners: Record<string, { userId: string; username: string; amount: number } | null> = {};
@@ -66,9 +59,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const draftPicksToInsert: { league_id: string; user_id: string; player_id: number; pick_number: number }[] = [];
 
   for (const playerId of (pack.player_ids as number[])) {
-    const player = playerMap.get(playerId);
-    const group = player ? (POSITION_GROUP_MAP[player.position] as PositionGroup | undefined) : undefined;
-
     const playerBids = (allBids ?? [])
       .filter(b => b.player_id === playerId && b.amount > 0)
       .sort((a, b) => {
@@ -79,10 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     let winner: typeof playerBids[0] | null = null;
     for (const bid of playerBids) {
       const userCredits = creditsMap[bid.user_id] ?? 0;
-      const userSlots = slotsMap[bid.user_id];
-      if (!group || !userSlots) continue;
       if (userCredits < bid.amount) continue;
-      if (userSlots[group] <= 0) continue;
       winner = bid;
       break;
     }
@@ -91,7 +78,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       teamPlayersToInsert.push({ league_id: leagueId, user_id: winner.user_id, player_id: playerId });
       draftPicksToInsert.push({ league_id: leagueId, user_id: winner.user_id, player_id: playerId, pick_number: pickNumber++ });
       creditsMap[winner.user_id] -= winner.amount;
-      if (slotsMap[winner.user_id] && group) slotsMap[winner.user_id][group]--;
       winners[String(playerId)] = { userId: winner.user_id, username: usernameMap[winner.user_id] ?? '?', amount: winner.amount };
     } else {
       winners[String(playerId)] = null;
@@ -101,7 +87,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (teamPlayersToInsert.length > 0) await supabase.from('team_players').insert(teamPlayersToInsert);
   if (draftPicksToInsert.length > 0) await supabase.from('draft_picks').insert(draftPicksToInsert);
 
-  // Update credits for winners
   const changedUsers = Object.keys(winners)
     .map(pid => winners[pid])
     .filter(Boolean)
@@ -121,17 +106,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .update({ status: 'closed', winners })
     .eq('id', pack.id);
 
-  const picksPerTeam = league.picks_per_team ?? 8;
-  const { data: allMembersCheck } = await supabase.from('league_members').select('user_id').eq('league_id', leagueId);
-  const { data: allPicksCheck } = await supabase.from('team_players').select('user_id').eq('league_id', leagueId);
-
-  const allDone = (allMembersCheck ?? []).every(m =>
-    (allPicksCheck?.filter(p => p.user_id === m.user_id).length ?? 0) >= picksPerTeam
-  );
+  // Draft ends when nobody can afford the minimum for a full pack
+  const minToParticipate = MIN_BID * AUCTION_PACK_COMPOSITION.length;
+  const allDone = Object.values(creditsMap).every(credits => credits < minToParticipate);
 
   if (allDone) {
     await supabase.from('leagues').update({ draft_status: 'completed' }).eq('id', leagueId);
 
+    const { data: allMembersCheck } = await supabase.from('league_members').select('user_id').eq('league_id', leagueId);
     const { count: scheduleExists } = await supabase
       .from('weekly_matchups').select('id', { count: 'exact', head: true }).eq('league_id', leagueId);
 
