@@ -68,3 +68,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   return NextResponse.json({ ...league, members: enrichedMembers, draftPicks: draftPicks ?? [] });
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = getAuth(req);
+  if (!auth) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+
+  const supabase = db();
+  const { data: league } = await supabase
+    .from('leagues')
+    .select('commissioner_id')
+    .eq('id', params.id)
+    .single();
+
+  if (!league) return NextResponse.json({ error: 'Ligue introuvable' }, { status: 404 });
+  if (league.commissioner_id !== auth.userId) {
+    return NextResponse.json({ error: 'Seul le commissaire peut supprimer cette ligue' }, { status: 403 });
+  }
+
+  await supabase.from('leagues').delete().eq('id', params.id);
+  return NextResponse.json({ ok: true });
+}

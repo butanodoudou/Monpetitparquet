@@ -337,23 +337,42 @@ export default function LeagueDetailPage() {
 
           {/* ── INFOS ── */}
           {tab === 'infos' && (
-            <div className="card space-y-3">
-              <div className="text-slate-400 text-xs font-bold uppercase tracking-wide mb-2">Membres</div>
-              {league.members.map(m => (
-                <div key={m.user_id} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-slate-900"
-                    style={{ backgroundColor: m.avatar_color }}>
-                    {m.username[0].toUpperCase()}
+            <div className="space-y-3">
+              <div className="card space-y-3">
+                <div className="text-slate-400 text-xs font-bold uppercase tracking-wide mb-2">Membres</div>
+                {league.members.map(m => (
+                  <div key={m.user_id} className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-slate-900"
+                      style={{ backgroundColor: m.avatar_color }}>
+                      {m.username[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-slate-200 text-sm font-semibold">{m.username}</div>
+                      <div className="text-xs text-slate-500">{m.team_name}</div>
+                    </div>
+                    {m.user_id === league.commissioner_id && (
+                      <span className="ml-auto text-xs bg-brand/20 text-brand px-2 py-0.5 rounded-full font-bold">Commissaire</span>
+                    )}
                   </div>
-                  <div>
-                    <div className="text-slate-200 text-sm font-semibold">{m.username}</div>
-                    <div className="text-xs text-slate-500">{m.team_name}</div>
-                  </div>
-                  {m.user_id === league.commissioner_id && (
-                    <span className="ml-auto text-xs bg-brand/20 text-brand px-2 py-0.5 rounded-full font-bold">Commissaire</span>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
+
+              {isCommissioner && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Supprimer définitivement cette ligue et toutes ses données ?')) return;
+                    const r = await fetch(`/api/leagues/${id}`, {
+                      method: 'DELETE',
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (r.ok) router.replace('/leagues');
+                    else { const d = await r.json(); alert(d.error); }
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-semibold"
+                >
+                  🗑 Supprimer la ligue
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -93,3 +93,84 @@ export function computeTierThresholds(avgFantasies: number[]): { p5: number; p20
     p50: sorted[Math.max(0, Math.floor(len * 0.50))] ?? 0,
   };
 }
+
+// ─── Position groups ────────────────────────────────────────────
+
+export type PositionGroup = 'arriere' | 'sf' | 'grand';
+
+export const POSITION_GROUP_MAP: Record<string, PositionGroup> = {
+  PG: 'arriere', SG: 'arriere',
+  SF: 'sf',
+  PF: 'grand', C: 'grand',
+};
+
+export const ROSTER_SLOTS: Record<PositionGroup, number> = { arriere: 3, sf: 2, grand: 3 };
+export const STARTER_SLOTS: Record<PositionGroup, number> = { arriere: 2, sf: 1, grand: 2 };
+
+export const GROUP_LABELS: Record<PositionGroup, string> = {
+  arriere: 'Arrières',
+  sf: 'Ailiers',
+  grand: 'Grands',
+};
+
+export function getPositionGroup(position: string): PositionGroup | null {
+  return POSITION_GROUP_MAP[position] ?? null;
+}
+
+export function getRemainingRosterSlots(players: { position: string }[]): Record<PositionGroup, number> {
+  const counts: Record<PositionGroup, number> = { arriere: 0, sf: 0, grand: 0 };
+  for (const p of players) {
+    const g = POSITION_GROUP_MAP[p.position];
+    if (g) counts[g]++;
+  }
+  return {
+    arriere: ROSTER_SLOTS.arriere - counts.arriere,
+    sf: ROSTER_SLOTS.sf - counts.sf,
+    grand: ROSTER_SLOTS.grand - counts.grand,
+  };
+}
+
+export function computeDefaultStarters(
+  roster: { player_id: number; position: string; season_avg_fantasy: number }[]
+): number[] {
+  const grouped: Record<PositionGroup, typeof roster> = { arriere: [], sf: [], grand: [] };
+  for (const p of roster) {
+    const g = POSITION_GROUP_MAP[p.position];
+    if (g) grouped[g].push(p);
+  }
+  const starters: number[] = [];
+  for (const [group, slots] of Object.entries(STARTER_SLOTS) as [PositionGroup, number][]) {
+    const sorted = [...(grouped[group] ?? [])].sort((a, b) => b.season_avg_fantasy - a.season_avg_fantasy);
+    starters.push(...sorted.slice(0, slots).map(p => p.player_id));
+  }
+  return starters;
+}
+
+// ─── Auction Draft ─────────────────────────────────────────────
+
+export type AuctionTier = 'elite' | 'star' | 'basique';
+
+export const AUCTION_PACK_COMPOSITION: AuctionTier[] = [
+  'elite', 'star', 'star', 'basique', 'basique'
+];
+
+export const AUCTION_TIER_CONFIG: Record<AuctionTier, { label: string; color: string; bg: string }> = {
+  elite:   { label: 'Élite',   color: 'text-purple-400', bg: 'bg-purple-900/30 border-purple-500/40' },
+  star:    { label: 'Star',    color: 'text-yellow-400', bg: 'bg-yellow-900/20 border-yellow-500/30' },
+  basique: { label: 'Basique', color: 'text-slate-300',  bg: 'bg-slate-700/30 border-slate-600/30' },
+};
+
+export function assignAuctionTier(fantasy: number, p5: number, p25: number): AuctionTier {
+  if (fantasy >= p5) return 'elite';
+  if (fantasy >= p25) return 'star';
+  return 'basique';
+}
+
+export function computeAuctionTierThresholds(avgFantasies: number[]): { p5: number; p25: number } {
+  const sorted = [...avgFantasies].sort((a, b) => b - a);
+  const len = sorted.length;
+  return {
+    p5:  sorted[Math.max(0, Math.floor(len * 0.05))] ?? 0,
+    p25: sorted[Math.max(0, Math.floor(len * 0.25))] ?? 0,
+  };
+}
