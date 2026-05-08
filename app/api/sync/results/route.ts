@@ -61,7 +61,6 @@ async function syncResults(round?: number) {
         const perfs = await fetchEventLineups(event.id, event.homeTeam.id, event.awayTeam.id);
 
         for (const perf of perfs) {
-          // Upsert player from lineup data to handle transfers/new players not in the squad roster
           const nameParts = perf.player.name.split(' ');
           await supabase.from('players').upsert({
             id: perf.player.id,

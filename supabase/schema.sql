@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- -------------------------------------------------------
--- Real Betclic Élite teams (from api-sports.io)
+-- Real Betclic Élite teams (from Sofascore)
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS betclic_teams (
   id INTEGER PRIMARY KEY,
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS betclic_teams (
 );
 
 -- -------------------------------------------------------
--- Real players (from api-sports.io)
+-- Real players (from Sofascore)
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS players (
   id INTEGER PRIMARY KEY,
@@ -46,7 +46,6 @@ CREATE TABLE IF NOT EXISTS players (
   weight TEXT,
   birth_date TEXT,
   photo_url TEXT,
-  -- Season averages (updated by /api/sync/players)
   avg_points REAL DEFAULT 0,
   avg_assists REAL DEFAULT 0,
   avg_rebounds REAL DEFAULT 0,
@@ -61,7 +60,7 @@ CREATE TABLE IF NOT EXISTS players (
 );
 
 -- -------------------------------------------------------
--- Matches (from api-sports.io)
+-- Matches (from Sofascore)
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS matches (
   id INTEGER PRIMARY KEY,
@@ -73,13 +72,13 @@ CREATE TABLE IF NOT EXISTS matches (
   away_score INTEGER,
   match_date TIMESTAMPTZ NOT NULL,
   week INTEGER,
-  status TEXT DEFAULT 'scheduled',  -- scheduled | live | finished
-  season INTEGER DEFAULT 2024,
+  status TEXT DEFAULT 'scheduled',
+  season TEXT DEFAULT '2025-2026',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- -------------------------------------------------------
--- Player performances per match (from api-sports.io)
+-- Player performances per match
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS player_performances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,7 +107,8 @@ CREATE TABLE IF NOT EXISTS leagues (
   commissioner_id UUID REFERENCES users(id),
   max_teams INTEGER DEFAULT 8,
   picks_per_team INTEGER DEFAULT 5,
-  draft_status TEXT DEFAULT 'pending',  -- pending | in_progress | completed
+  draft_status TEXT DEFAULT 'pending',
+  draft_type TEXT DEFAULT 'mystery',
   current_draft_pick INTEGER DEFAULT 1,
   pick_deadline TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS league_members (
   user_id UUID REFERENCES users(id),
   team_name TEXT,
   draft_position INTEGER,
+  draft_credits INTEGER DEFAULT 100,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(league_id, user_id)
 );
@@ -153,6 +154,35 @@ CREATE TABLE IF NOT EXISTS draft_picks (
 );
 
 -- -------------------------------------------------------
+-- Mystery Draft Pack Offers
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS draft_pack_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  tier TEXT NOT NULL CHECK (tier IN ('elite', 'gold', 'silver', 'bronze')),
+  player_ids INTEGER[] NOT NULL,
+  chosen_player_id INTEGER REFERENCES players(id),
+  credits_spent INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- -------------------------------------------------------
+-- Weekly Matchups (head-to-head fantasy duels)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS weekly_matchups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
+  week INTEGER NOT NULL,
+  home_user_id UUID NOT NULL REFERENCES users(id),
+  away_user_id UUID NOT NULL REFERENCES users(id),
+  home_score FLOAT DEFAULT 0,
+  away_score FLOAT DEFAULT 0,
+  winner_user_id UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- -------------------------------------------------------
 -- Indexes
 -- -------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
@@ -163,15 +193,13 @@ CREATE INDEX IF NOT EXISTS idx_perf_match ON player_performances(match_id);
 CREATE INDEX IF NOT EXISTS idx_members_league ON league_members(league_id);
 CREATE INDEX IF NOT EXISTS idx_team_players_league ON team_players(league_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_draft_picks_league ON draft_picks(league_id);
+CREATE INDEX IF NOT EXISTS idx_pack_offers_league_user ON draft_pack_offers(league_id, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matchups_week_home ON weekly_matchups(league_id, week, home_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matchups_week_away ON weekly_matchups(league_id, week, away_user_id);
+CREATE INDEX IF NOT EXISTS idx_matchups_league ON weekly_matchups(league_id);
 
 -- -------------------------------------------------------
--- Enable Realtime on these tables (for live draft)
--- -------------------------------------------------------
--- Run in Supabase Dashboard → Database → Replication → enable for:
--- leagues, draft_picks, team_players
-
--- -------------------------------------------------------
--- Row Level Security (allow all for service role)
+-- Row Level Security
 -- -------------------------------------------------------
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE players ENABLE ROW LEVEL SECURITY;
@@ -182,8 +210,9 @@ ALTER TABLE leagues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE league_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE draft_picks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE draft_pack_offers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weekly_matchups ENABLE ROW LEVEL SECURITY;
 
--- Allow read access via anon key (for Realtime subscriptions)
 CREATE POLICY "anon read players" ON players FOR SELECT USING (true);
 CREATE POLICY "anon read teams" ON betclic_teams FOR SELECT USING (true);
 CREATE POLICY "anon read matches" ON matches FOR SELECT USING (true);
@@ -192,4 +221,12 @@ CREATE POLICY "anon read leagues" ON leagues FOR SELECT USING (true);
 CREATE POLICY "anon read members" ON league_members FOR SELECT USING (true);
 CREATE POLICY "anon read team_players" ON team_players FOR SELECT USING (true);
 CREATE POLICY "anon read draft_picks" ON draft_picks FOR SELECT USING (true);
--- service_role bypasses RLS for all writes (used in API routes)
+CREATE POLICY "anon read pack_offers" ON draft_pack_offers FOR SELECT USING (true);
+CREATE POLICY "anon read matchups" ON weekly_matchups FOR SELECT USING (true);
+-- service_role bypasses RLS for all writes
+
+-- -------------------------------------------------------
+-- Migration statements (run separately if schema exists)
+-- -------------------------------------------------------
+-- ALTER TABLE leagues ADD COLUMN IF NOT EXISTS draft_type TEXT DEFAULT 'mystery';
+-- ALTER TABLE league_members ADD COLUMN IF NOT EXISTS draft_credits INTEGER DEFAULT 100;
