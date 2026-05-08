@@ -1,389 +1,542 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
 import { useAuthStore } from '@/store/authStore';
-import { getSupabase } from '@/lib/supabase';
 import {
-  PACK_PRICES, DRAFT_BUDGET, TIER_CONFIG,
-  POSITION_GROUP_MAP, ROSTER_SLOTS, GROUP_LABELS,
-  type PlayerTier, type PositionGroup,
+  AUCTION_TIER_CONFIG, TIER_MIN_BIDS,
+  type AuctionTier, type PositionGroup,
 } from '@/lib/fantasy';
 
-interface Player {
-  id: number;
-  name: string;
-  team: string;
-  position: string;
-  jersey_number: number | null;
-  photo_url: string | null;
-  avg_points: number;
-  avg_assists: number;
-  avg_rebounds: number;
-  season_avg_fantasy: number;
-  tier: PlayerTier;
+const fmt = (n: number) => '$' + n.toLocaleString('fr-FR');
+
+function fmtCountdown(ms: number): string {
+  if (ms <= 0) return 'Expiré';
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const s = Math.floor((ms % 60_000) / 1_000);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
-interface DraftState {
-  picks_per_team: number;
-  draft_status: string;
-  myCredits: number;
-  myPlayers: { id: number; name: string; position: string; tier?: PlayerTier }[];
+interface AuctionPlayer {
+  id: number; name: string; team: string; position: string;
+  tier: AuctionTier; photo_url: string | null; jersey_number: number | null;
+  season_avg_fantasy: number; avg_points: number; avg_assists: number; avg_rebounds: number;
+}
+
+interface PackWinner { userId: string; username: string; amount: number; }
+
+interface CurrentPack {
+  id: string; packNumber: number; status: 'bidding' | 'closed';
+  players: AuctionPlayer[];
+  myBids: Record<number, number>;
+  submittedUserIds: string[];
+  winners: Record<string, PackWinner | null> | null;
+  expiresAt: string | null;
+}
+
+interface Member {
+  userId: string; username: string; avatarColor: string;
+  isBot: boolean; playerCount: number; credits: number; hasSubmitted: boolean;
+}
+
+interface AuctionState {
   isCommissioner: boolean;
-  hasBots: boolean;
+  myCredits: number;
+  myRemainingSlots: Record<PositionGroup, number>;
+  members: Member[];
+  currentPack: CurrentPack | null;
+  draftComplete: boolean;
 }
 
-type Phase = 'lobby' | 'opening' | 'picking' | 'done';
-
-const TIER_ORDER: PlayerTier[] = ['elite', 'gold', 'silver', 'bronze'];
-const TIER_EMOJI: Record<PlayerTier, string> = { elite: '👑', gold: '🥇', silver: '🥈', bronze: '🥉' };
+const TIER_EMOJI: Record<AuctionTier, string> = { elite: '💜', star: '⭐', basique: '⚪' };
 
 export default function DraftPage() {
   const { id: leagueId } = useParams<{ id: string }>();
   const { user, token } = useAuthStore();
   const router = useRouter();
 
-  const [state, setState] = useState<DraftState | null>(null);
-  const [phase, setPhase] = useState<Phase>('lobby');
-  const [offerId, setOfferId] = useState<string | null>(null);
-  const [packPlayers, setPackPlayers] = useState<Player[]>([]);
-  const [revealed, setRevealed] = useState<boolean[]>([false, false, false]);
-  const [chosenId, setChosenId] = useState<number | null>(null);
-  const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
+  const [state, setState] = useState<AuctionState | null>(null);
+  const [localBids, setLocalBids] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
-  const [picking, setPicking] = useState(false);
-  const [botDrafting, setBotDrafting] = useState(false);
-  const [lastPicked, setLastPicked] = useState<Player | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [error, setError] = useState('');
+  const [countdown, setCountdown] = useState('');
+  const lastPackIdRef = useRef<string | null>(null);
+  const autoClosingRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!token) return;
-    const [leagueRes, myTeamRes] = await Promise.all([
-      fetch(`/api/leagues/${leagueId}`, { headers: { Authorization: `Bearer ${token}` } }),
-      fetch(`/api/teams/${leagueId}/my-team`, { headers: { Authorization: `Bearer ${token}` } }),
-    ]);
-    const league = await leagueRes.json();
-    const myTeam = await myTeamRes.json();
-
-    if (league.draft_status === 'completed') { router.replace(`/leagues/${leagueId}/team`); return; }
-
-    const myMember = league.members?.find((m: any) => m.user_id === user?.id);
-
-    setState({
-      picks_per_team: league.picks_per_team ?? 8,
-      draft_status: league.draft_status,
-      myCredits: myMember?.draft_credits ?? DRAFT_BUDGET,
-      myPlayers: myTeam.players ?? [],
-      isCommissioner: league.commissioner_id === user?.id,
-      hasBots: (league.members ?? []).some((m: any) => m.is_bot),
+    const res = await fetch(`/api/draft/${leagueId}/auction-state`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
-    setLoading(false);
-  }, [token, leagueId, user?.id]);
+    if (!res.ok) return;
+    const data: AuctionState = await res.json();
+    setState(data);
 
-  useEffect(() => { if (!token) router.replace('/auth'); else load(); }, [token]);
+    if (data.currentPack?.id !== lastPackIdRef.current) {
+      lastPackIdRef.current = data.currentPack?.id ?? null;
+      const serverBids = data.currentPack?.myBids ?? {};
+      const hasServerBids = Object.values(serverBids).some(v => v > 0);
+      if (!hasServerBids && data.currentPack) {
+        const prefilled: Record<number, number> = {};
+        for (const p of data.currentPack.players) {
+          prefilled[p.id] = TIER_MIN_BIDS[p.tier];
+        }
+        setLocalBids(prefilled);
+      } else {
+        setLocalBids(serverBids);
+      }
+    }
+
+    // Auto-close expired packs (any member can trigger)
+    if (
+      data.currentPack?.status === 'bidding' &&
+      data.currentPack?.expiresAt &&
+      new Date(data.currentPack.expiresAt).getTime() < Date.now() &&
+      !autoClosingRef.current
+    ) {
+      autoClosingRef.current = true;
+      try {
+        await fetch(`/api/draft/${leagueId}/auto-close`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } finally {
+        autoClosingRef.current = false;
+      }
+    }
+
+    setLoading(false);
+  }, [token, leagueId]);
 
   useEffect(() => {
-    const channel = getSupabase()
-      .channel(`draft-mystery-${leagueId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leagues', filter: `id=eq.${leagueId}` },
-        payload => {
-          if ((payload.new as any).draft_status === 'completed') router.replace(`/leagues/${leagueId}/team`);
-        })
-      .subscribe();
-    return () => { getSupabase().removeChannel(channel); };
-  }, [leagueId]);
+    if (!token) { router.replace('/auth'); return; }
+    load();
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
+  }, [token, leagueId]);
 
-  const draftBots = async () => {
+  // Live countdown
+  useEffect(() => {
+    const expiresAt = state?.currentPack?.expiresAt;
+    if (!expiresAt || state?.currentPack?.status !== 'bidding') { setCountdown(''); return; }
+    const tick = () => setCountdown(fmtCountdown(new Date(expiresAt).getTime() - Date.now()));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [state?.currentPack?.expiresAt, state?.currentPack?.status]);
+
+  const drawPack = async () => {
     if (!token) return;
-    setBotDrafting(true);
+    setDrawing(true);
     setError('');
-    const res = await fetch(`/api/leagues/${leagueId}/bot-draft`, {
+    const res = await fetch(`/api/draft/${leagueId}/draw-pack`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    setBotDrafting(false);
+    setDrawing(false);
     if (!res.ok) { setError(data.error); return; }
-    if (data.draftComplete) {
-      router.replace(`/leagues/${leagueId}/team`);
-    } else {
-      await load();
-    }
+    await load();
   };
 
-  const openPack = async (tier: PlayerTier) => {
-    if (!token || !state) return;
-    if ((state.myCredits ?? 0) < PACK_PRICES[tier]) { setError('Crédits insuffisants'); return; }
+  const submitBids = async () => {
+    if (!token || !state?.currentPack) return;
+    setSubmitting(true);
     setError('');
-    setLoading(true);
-
-    const res = await fetch(`/api/draft/${leagueId}/open-pack`, {
+    const bidsToSend: Record<string, number> = {};
+    for (const p of state.currentPack.players) {
+      bidsToSend[String(p.id)] = localBids[p.id] ?? 0;
+    }
+    const res = await fetch(`/api/draft/${leagueId}/submit-bids`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tier }),
+      body: JSON.stringify({ bids: bidsToSend }),
     });
     const data = await res.json();
-    setLoading(false);
-
+    setSubmitting(false);
     if (!res.ok) { setError(data.error); return; }
-
-    setOfferId(data.offerId);
-    setPackPlayers(data.players);
-    setRevealed([false, false, false]);
-    setChosenId(null);
-    setRejectedIds(new Set());
-    setPhase('opening');
-
-    [400, 900, 1400].forEach((delay, i) => {
-      setTimeout(() => setRevealed(r => { const n = [...r]; n[i] = true; return n; }), delay);
-    });
-    setTimeout(() => setPhase('picking'), 1900);
+    await load();
   };
 
-  const pickPlayer = async (player: Player) => {
-    if (!token || !offerId || picking) return;
-    setPicking(true);
-    setChosenId(player.id);
-    setRejectedIds(new Set(packPlayers.filter(p => p.id !== player.id).map(p => p.id)));
-
-    await new Promise(r => setTimeout(r, 600));
-
-    const res = await fetch(`/api/draft/${leagueId}/pick-from-pack`, {
+  const closePack = async () => {
+    if (!token) return;
+    setClosing(true);
+    setError('');
+    const res = await fetch(`/api/draft/${leagueId}/close-pack`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ offerId, playerId: player.id }),
+      headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    setPicking(false);
-
-    if (!res.ok) { setError(data.error); setPhase('lobby'); load(); return; }
-
-    setLastPicked(player);
-    setState(s => s ? {
-      ...s,
-      myCredits: data.creditsLeft,
-      myPlayers: [...s.myPlayers, { id: player.id, name: player.name, position: player.position, tier: player.tier }],
-    } : s);
-
-    if (data.draftComplete) { setPhase('done'); return; }
-    setTimeout(() => { setPhase('lobby'); setLastPicked(null); }, 2000);
+    setClosing(false);
+    if (!res.ok) { setError(data.error); return; }
+    if (data.draftComplete) { router.replace(`/leagues/${leagueId}/team`); return; }
+    await load();
   };
 
   if (loading && !state) {
-    return <div className="page items-center justify-center flex"><div className="text-5xl animate-bounce">🏀</div></div>;
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-slate-900">
+        <div className="text-5xl animate-bounce">🏀</div>
+      </div>
+    );
   }
   if (!state) return null;
 
-  const rosterFull = state.myPlayers.length >= state.picks_per_team;
+  if (state.draftComplete) {
+    return (
+      <div className="flex flex-col min-h-dvh bg-slate-900 items-center justify-center px-4 text-center">
+        <div className="text-6xl mb-4">🎉</div>
+        <h1 className="text-3xl font-black text-slate-100 mb-2">Draft terminée !</h1>
+        <p className="text-slate-400 mb-6">Tous les managers ont leur roster complet. Bonne chance !</p>
+        <button className="btn-primary max-w-xs" onClick={() => router.push(`/leagues/${leagueId}/team`)}>
+          Voir mon équipe →
+        </button>
+      </div>
+    );
+  }
+
+  const pack = state.currentPack;
+  const myId = user?.id ?? '';
+  const hasSubmitted = pack?.submittedUserIds.includes(myId) ?? false;
+  const submittedCount = pack?.submittedUserIds.length ?? 0;
+  const totalMembers = state.members.length;
+  const allSubmitted = submittedCount >= totalMembers;
+
+  const totalBid = Object.values(localBids).reduce((s, v) => s + (v || 0), 0);
+  const budgetAfterBids = state.myCredits - totalBid;
+  const budgetOk = budgetAfterBids >= 0;
+
+  const isExpired = pack?.status === 'bidding' && pack.expiresAt
+    ? new Date(pack.expiresAt).getTime() < Date.now()
+    : false;
 
   return (
-    <div className="flex flex-col min-h-dvh bg-slate-900 overflow-hidden">
+    <div className="flex flex-col min-h-dvh bg-slate-900">
       {/* Header */}
       <div className="px-4 py-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
         <div>
-          <div className="text-slate-100 font-black text-base">Draft Mystery</div>
-          <div className="text-slate-400 text-xs">{state.myPlayers.length}/{state.picks_per_team} joueurs</div>
+          <div className="text-slate-100 font-black text-base">Draft · Enchères</div>
+          {pack && (
+            <div className="text-slate-400 text-xs flex items-center gap-2">
+              <span>Pack #{pack.packNumber}</span>
+              {pack.status === 'bidding' && (
+                <>
+                  <span>· {submittedCount}/{totalMembers} soumis</span>
+                  {countdown && (
+                    <span className={`font-semibold ${isExpired ? 'text-red-400' : 'text-slate-400'}`}>
+                      · ⏱ {countdown}
+                    </span>
+                  )}
+                </>
+              )}
+              {pack.status === 'closed' && <span>· Résultats</span>}
+            </div>
+          )}
+          {!pack && <div className="text-slate-400 text-xs">Prêt à démarrer</div>}
         </div>
         <div className="text-right">
-          <div className="text-brand font-black text-xl">{state.myCredits}</div>
-          <div className="text-slate-500 text-xs">crédits</div>
+          <div className="text-brand font-black text-xl">{fmt(state.myCredits)}</div>
+          <div className="text-slate-500 text-xs">budget restant</div>
         </div>
-      </div>
-
-      {/* Position slots */}
-      <div className="px-4 pt-3 flex gap-2">
-        {(['arriere', 'sf', 'grand'] as PositionGroup[]).map(group => {
-          const filled = state.myPlayers.filter(p => POSITION_GROUP_MAP[p.position] === group).length;
-          const total = ROSTER_SLOTS[group];
-          const full = filled >= total;
-          return (
-            <div key={group} className={`flex-1 rounded-xl px-2 py-2 text-center transition-colors ${full ? 'bg-green-500/10 border border-green-500/30' : 'bg-slate-800 border border-slate-700'}`}>
-              <div className={`text-[10px] font-bold uppercase tracking-wide mb-1 ${full ? 'text-green-400' : 'text-slate-500'}`}>{GROUP_LABELS[group]}</div>
-              <div className="flex gap-1 justify-center">
-                {Array.from({ length: total }).map((_, i) => (
-                  <div key={i} className={`w-2 h-2 rounded-full ${i < filled ? (full ? 'bg-green-400' : 'bg-brand') : 'bg-slate-700'}`} />
-                ))}
-              </div>
-              <div className={`text-xs font-black mt-1 ${full ? 'text-green-400' : 'text-slate-300'}`}>{filled}/{total}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Roster chips */}
-      <div className="px-4 pt-2 flex gap-1.5 flex-wrap">
-        {state.myPlayers.map(p => (
-          <span key={p.id} className={`text-xs px-2 py-1 rounded-lg font-semibold ${TIER_CONFIG[p.tier ?? 'bronze'].color} bg-slate-800`}>
-            {TIER_EMOJI[p.tier ?? 'bronze']} {p.name.split(' ').pop()}
-          </span>
-        ))}
       </div>
 
       {error && (
         <div className="mx-4 mt-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2 text-red-400 text-xs">{error}</div>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center px-4 pb-6">
+      <div className="flex-1 overflow-y-auto px-4 pb-6 pt-3">
 
-        {/* ── LOBBY ── */}
-        {phase === 'lobby' && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
-            <AnimatePresence>
-              {lastPicked && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                  className={`mb-4 p-3 rounded-xl border text-center bg-gradient-to-br ${TIER_CONFIG[lastPicked.tier].bg} border-slate-600`}>
-                  <div className={`font-black text-sm ${TIER_CONFIG[lastPicked.tier].color}`}>
-                    {TIER_EMOJI[lastPicked.tier]} {lastPicked.name} drafté !
+        {/* ── NO PACK ── */}
+        {!pack && (
+          <div>
+            <div className="text-center py-8">
+              <div className="text-4xl mb-3">📦</div>
+              {state.isCommissioner ? (
+                <>
+                  <div className="text-slate-100 font-bold text-base mb-1">Prêt à tirer un pack ?</div>
+                  <div className="text-slate-500 text-sm mb-1">5 joueurs · Enchères silencieuses · 12h pour miser</div>
+                  <div className="text-slate-600 text-xs mb-5">
+                    Élite min {fmt(30_000)} · Star min {fmt(10_000)} · Basique gratuit
                   </div>
-                  <div className="text-slate-400 text-xs">{lastPicked.team} · {lastPicked.season_avg_fantasy.toFixed(1)} pts fantasy</div>
-                </motion.div>
+                  <button onClick={drawPack} disabled={drawing} className="btn-primary max-w-xs">
+                    {drawing ? '⏳ Tirage…' : '🎴 Tirer le pack #1'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="text-slate-300 font-bold text-base mb-1">En attente…</div>
+                  <div className="text-slate-500 text-sm">Le commissaire va tirer le premier pack.</div>
+                </>
               )}
-            </AnimatePresence>
-
-            {rosterFull ? (
-              <div className="text-center">
-                <div className="text-4xl mb-3">🎉</div>
-                <div className="text-slate-100 font-black text-lg mb-1">Roster complet !</div>
-                <div className="text-slate-400 text-sm mb-4">En attente des autres managers…</div>
-              </div>
-            ) : (
-              <>
-                <div className="text-center mb-5">
-                  <div className="text-slate-400 text-sm">Choisis un pack à ouvrir</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {TIER_ORDER.map(tier => {
-                    const cfg = TIER_CONFIG[tier];
-                    const canAfford = state.myCredits >= PACK_PRICES[tier];
-                    return (
-                      <motion.button
-                        key={tier}
-                        whileTap={{ scale: 0.95 }}
-                        disabled={!canAfford || loading}
-                        onClick={() => openPack(tier)}
-                        className={`relative p-4 rounded-2xl border-2 text-left transition-all ${
-                          canAfford
-                            ? `bg-gradient-to-br ${cfg.bg} border-slate-600 active:border-slate-400`
-                            : 'bg-slate-800/30 border-slate-700/30 opacity-40'
-                        }`}
-                      >
-                        <div className="text-2xl mb-1">{TIER_EMOJI[tier]}</div>
-                        <div className={`font-black text-sm ${cfg.color}`}>{cfg.label}</div>
-                        <div className="text-slate-400 text-xs mt-0.5">3 cartes</div>
-                        <div className={`absolute top-3 right-3 font-black text-xs ${canAfford ? cfg.color : 'text-slate-600'}`}>
-                          {PACK_PRICES[tier]}cr
-                        </div>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-                <div className="mt-4 text-center text-xs text-slate-600">
-                  Chaque pack révèle 3 joueurs · Tu en gardes 1
-                </div>
-
-                {state.isCommissioner && state.hasBots && (
-                  <motion.button
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                    onClick={draftBots}
-                    disabled={botDrafting}
-                    className="mt-4 w-full py-2.5 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-300 text-sm font-semibold flex items-center justify-center gap-2 active:bg-slate-700"
-                  >
-                    {botDrafting
-                      ? <><span className="animate-spin">⚙️</span> Bots en train de drafter…</>
-                      : '🤖 Faire drafter les bots'}
-                  </motion.button>
-                )}
-              </>
-            )}
-          </motion.div>
-        )}
-
-        {/* ── OPENING / PICKING ── */}
-        {(phase === 'opening' || phase === 'picking') && (
-          <div className="w-full max-w-sm">
-            <div className="text-center mb-4">
-              <div className="text-slate-400 text-sm">
-                {phase === 'opening' ? 'Révélation en cours…' : 'Choisis ton joueur'}
-              </div>
             </div>
-            <div className="flex gap-3 justify-center">
-              {packPlayers.map((player, i) => {
-                const cfg = TIER_CONFIG[player.tier];
-                const isChosen = chosenId === player.id;
-                const isRejected = rejectedIds.has(player.id);
-                return (
-                  <motion.div
-                    key={player.id}
-                    style={{ perspective: 1000 }}
-                    className="flex-1"
-                    animate={isChosen ? { scale: 1.08 } : isRejected ? { scale: 0.88, opacity: 0.3 } : { scale: 1, opacity: 1 }}
-                    transition={{ duration: 0.4 }}
-                  >
-                    <motion.div
-                      style={{ transformStyle: 'preserve-3d', position: 'relative', height: 180 }}
-                      animate={{ rotateY: revealed[i] ? 180 : 0 }}
-                      transition={{ duration: 0.55, ease: 'easeInOut' }}
-                    >
-                      {/* Card back */}
-                      <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
-                        className="absolute inset-0 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 border-2 border-slate-600 flex items-center justify-center overflow-hidden">
-                        <motion.div
-                          animate={{ opacity: [0.3, 0.8, 0.3] }}
-                          transition={{ duration: 1.5, repeat: Infinity }}
-                          className="text-4xl">🏀</motion.div>
-                      </div>
-                      {/* Card front */}
-                      <div
-                        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
-                        className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${cfg.bg} border-2 flex flex-col p-2 overflow-hidden cursor-pointer ${
-                          phase === 'picking' && !chosenId ? 'border-slate-500 hover:border-slate-300' : 'border-slate-700'
-                        } ${isChosen ? `shadow-lg ${cfg.glow}` : ''}`}
-                        onClick={() => phase === 'picking' && !chosenId && pickPlayer(player)}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`text-[10px] font-black ${cfg.color}`}>{TIER_EMOJI[player.tier]} {cfg.label}</span>
-                          <span className="text-[10px] text-slate-500 bg-slate-800/60 px-1 rounded">{player.position}</span>
-                        </div>
-                        <div className="flex-1 flex items-center justify-center">
-                          {player.photo_url
-                            ? <Image src={player.photo_url} alt={player.name} width={48} height={48} className="rounded-full object-cover" unoptimized />
-                            : <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 text-xs font-bold">
-                                #{player.jersey_number ?? '?'}
-                              </div>
-                          }
-                        </div>
-                        <div className="text-center mt-1">
-                          <div className="text-slate-100 font-bold text-[11px] leading-tight truncate">{player.name.split(' ').pop()}</div>
-                          <div className="text-slate-500 text-[9px] truncate">{player.team}</div>
-                          <div className={`font-black text-sm mt-0.5 ${cfg.color}`}>{player.season_avg_fantasy.toFixed(1)}</div>
-                          <div className="text-slate-600 text-[9px]">pts/match</div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  </motion.div>
-                );
-              })}
+
+            <div className="mt-4 space-y-2">
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-3">Budgets</div>
+              {state.members.map(m => (
+                <div key={m.userId} className={`flex items-center gap-3 py-2 px-3 rounded-xl ${m.userId === myId ? 'bg-brand/10 border border-brand/20' : 'bg-slate-800'}`}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black text-slate-900 flex-shrink-0"
+                    style={{ backgroundColor: m.avatarColor }}>
+                    {m.username[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-slate-200 text-xs font-semibold truncate">
+                      {m.username}{m.userId === myId && <span className="text-brand ml-1">(moi)</span>}
+                    </div>
+                    <div className="text-slate-500 text-[10px]">{m.playerCount} joueur{m.playerCount !== 1 ? 's' : ''}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-xs font-black text-brand">{fmt(m.credits)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
-            {phase === 'picking' && !chosenId && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 text-center text-xs text-slate-500">
-                Tape sur une carte pour la choisir
-              </motion.div>
-            )}
           </div>
         )}
 
-        {/* ── DONE ── */}
-        {phase === 'done' && (
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center px-4">
-            <div className="text-6xl mb-4">🎉</div>
-            <h1 className="text-3xl font-black text-slate-100 mb-2">Draft terminée !</h1>
-            <p className="text-slate-400 mb-6">Ton équipe est prête. Bonne chance !</p>
-            <button className="btn-primary max-w-xs" onClick={() => router.push(`/leagues/${leagueId}/team`)}>
-              Voir mon équipe
-            </button>
-          </motion.div>
+        {/* ── PACK OPEN ── */}
+        {pack && pack.status === 'bidding' && (
+          <div>
+            {hasSubmitted ? (
+              /* Waiting view */
+              <div>
+                <div className="text-center py-4 mb-4 bg-green-500/10 border border-green-500/20 rounded-2xl">
+                  <div className="text-2xl mb-1">✅</div>
+                  <div className="text-slate-100 font-bold text-sm">Enchères soumises !</div>
+                  <div className="text-slate-400 text-xs mt-0.5">
+                    En attente des autres ({submittedCount}/{totalMembers})
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-4">
+                  {pack.players.map(player => {
+                    const cfg = AUCTION_TIER_CONFIG[player.tier];
+                    const myBid = pack.myBids[player.id] ?? 0;
+                    const tierMin = TIER_MIN_BIDS[player.tier];
+                    return (
+                      <div key={player.id} className={`rounded-xl border p-2.5 flex items-center gap-2.5 ${cfg.bg}`}>
+                        <span className={`text-[10px] font-black ${cfg.color} w-14 text-center shrink-0`}>
+                          {TIER_EMOJI[player.tier]} {cfg.label}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-slate-100 font-semibold text-xs truncate">{player.name}</div>
+                          <div className="text-slate-500 text-[10px]">{player.position} · {player.team}</div>
+                        </div>
+                        <div className={`font-black text-sm flex-shrink-0 ${myBid >= tierMin && myBid > 0 ? 'text-brand' : myBid === 0 && tierMin === 0 ? 'text-slate-400' : 'text-slate-600'}`}>
+                          {myBid >= tierMin || tierMin === 0 ? fmt(myBid) : '—'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {state.isCommissioner && (
+                  <div className="space-y-2">
+                    {allSubmitted && (
+                      <button onClick={closePack} disabled={closing} className="btn-primary w-full py-3">
+                        {closing ? '⏳ Résolution…' : '🔒 Fermer les enchères'}
+                      </button>
+                    )}
+                    {!allSubmitted && (
+                      <button onClick={closePack} disabled={closing}
+                        className="w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold">
+                        {closing ? '⏳…' : '⏭ Fermer quand même'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Bid input view */
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-slate-300 text-sm font-semibold">Tes enchères</div>
+                  <div className={`text-sm font-black ${budgetOk ? 'text-brand' : 'text-red-400'}`}>
+                    {fmt(budgetAfterBids)} restants
+                  </div>
+                </div>
+
+                <div className="mb-3 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${budgetOk ? 'bg-brand' : 'bg-red-500'}`}
+                    style={{ width: `${Math.min(100, (totalBid / Math.max(1, state.myCredits)) * 100)}%` }}
+                  />
+                </div>
+
+                <div className="space-y-2.5 mb-4">
+                  {pack.players.map(player => {
+                    const cfg = AUCTION_TIER_CONFIG[player.tier];
+                    const tierMin = TIER_MIN_BIDS[player.tier];
+                    const canAfford = state.myCredits >= tierMin || tierMin === 0;
+                    const currentBid = localBids[player.id] ?? tierMin;
+
+                    return (
+                      <div key={player.id} className={`rounded-2xl border p-3 ${cfg.bg} ${!canAfford ? 'opacity-50' : ''}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
+                            #{player.jersey_number ?? player.position[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className={`text-[10px] font-black ${cfg.color}`}>
+                                {TIER_EMOJI[player.tier]} {cfg.label}
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                min {fmt(tierMin)}
+                              </span>
+                            </div>
+                            <div className="text-slate-100 font-bold text-sm truncate">{player.name}</div>
+                            <div className="text-slate-400 text-[11px]">
+                              {player.position} · {player.team} · <span className="text-slate-300">{player.season_avg_fantasy.toFixed(1)}</span> pts
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0">
+                            {!canAfford ? (
+                              <div className="text-slate-600 text-xs font-bold text-center w-20">$0<br/><span className="text-[10px]">budget insuf.</span></div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-500 text-xs">$</span>
+                                <input
+                                  type="number"
+                                  min={tierMin}
+                                  step={1000}
+                                  max={state.myCredits}
+                                  value={currentBid || ''}
+                                  placeholder={String(tierMin)}
+                                  onChange={e => {
+                                    const raw = parseInt(e.target.value) || 0;
+                                    const val = raw === 0 ? 0 : Math.max(tierMin, Math.min(state.myCredits, raw));
+                                    setLocalBids(prev => ({ ...prev, [player.id]: val }));
+                                  }}
+                                  className="w-20 bg-slate-900/60 border border-slate-600 rounded-lg px-2 py-1.5 text-center text-slate-100 font-bold text-sm focus:outline-none focus:border-brand"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {!budgetOk && (
+                  <div className="text-center text-red-400 text-xs mb-2">
+                    Budget dépassé de {fmt(Math.abs(budgetAfterBids))}
+                  </div>
+                )}
+
+                <button
+                  onClick={submitBids}
+                  disabled={submitting || !budgetOk}
+                  className={`btn-primary w-full py-3 ${!budgetOk ? 'opacity-40' : ''}`}
+                >
+                  {submitting ? '⏳ Envoi…' : `Soumettre · ${fmt(totalBid)}`}
+                </button>
+
+                {state.isCommissioner && (
+                  <button onClick={closePack} disabled={closing}
+                    className="mt-2 w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold">
+                    {closing ? '⏳…' : '⏭ Forcer la fermeture'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Submission progress pills */}
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {state.members.map(m => (
+                <div key={m.userId} className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+                  pack.submittedUserIds.includes(m.userId)
+                    ? 'bg-green-500/20 text-green-300 border border-green-500/20'
+                    : 'bg-slate-700 text-slate-500 border border-slate-700'
+                }`}>
+                  <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.avatarColor }} />
+                  {m.username}{pack.submittedUserIds.includes(m.userId) ? ' ✓' : ' …'}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── PACK CLOSED (RESULTS) ── */}
+        {pack && pack.status === 'closed' && (
+          <div>
+            <div className="text-center mb-4">
+              <div className="text-2xl mb-1">🏆</div>
+              <div className="text-slate-100 font-black text-base">Résultats — Pack #{pack.packNumber}</div>
+            </div>
+
+            <div className="space-y-2.5 mb-5">
+              {pack.players.map(player => {
+                const cfg = AUCTION_TIER_CONFIG[player.tier];
+                const winnerInfo = pack.winners?.[String(player.id)];
+                const iMeWon = winnerInfo?.userId === myId;
+
+                return (
+                  <div key={player.id} className={`rounded-2xl border p-3 ${
+                    iMeWon ? 'bg-brand/10 border-brand/40' : winnerInfo ? cfg.bg : 'bg-slate-800/40 border-slate-700 opacity-50'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
+                        #{player.jersey_number ?? player.position[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-[10px] font-black ${cfg.color} mb-0.5`}>
+                          {TIER_EMOJI[player.tier]} {cfg.label}
+                        </div>
+                        <div className="text-slate-100 font-bold text-sm truncate">{player.name}</div>
+                        <div className="text-slate-400 text-[11px]">{player.position} · {player.team}</div>
+                      </div>
+                      <div className="flex-shrink-0 text-right min-w-[80px]">
+                        {winnerInfo ? (
+                          <>
+                            <div className={`font-black text-sm ${iMeWon ? 'text-brand' : 'text-slate-200'}`}>
+                              {iMeWon ? '🎉 Toi' : winnerInfo.username}
+                            </div>
+                            <div className="text-xs text-slate-400">{fmt(winnerInfo.amount)}</div>
+                          </>
+                        ) : (
+                          <div className="text-xs text-slate-600">Non attribué</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {state.isCommissioner ? (
+              <button onClick={drawPack} disabled={drawing} className="btn-primary w-full py-3">
+                {drawing ? '⏳ Tirage…' : '🎴 Tirer le prochain pack'}
+              </button>
+            ) : (
+              <div className="text-center text-slate-500 text-sm py-2">
+                En attente du prochain pack par le commissaire…
+              </div>
+            )}
+
+            {/* Budgets */}
+            <div className="mt-5 space-y-2">
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-2">Budgets restants</div>
+              {state.members.map(m => (
+                <div key={m.userId} className={`flex items-center gap-3 py-1.5 px-3 rounded-xl ${m.userId === myId ? 'bg-brand/10 border border-brand/20' : 'bg-slate-800/60'}`}>
+                  <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-black text-slate-900"
+                    style={{ backgroundColor: m.avatarColor }}>
+                    {m.username[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 text-slate-300 text-xs font-semibold truncate">
+                    {m.username}{m.userId === myId && <span className="text-brand ml-1">(moi)</span>}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mr-2">{m.playerCount} joueurs</div>
+                  <div className="text-xs font-black text-brand">{fmt(m.credits)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

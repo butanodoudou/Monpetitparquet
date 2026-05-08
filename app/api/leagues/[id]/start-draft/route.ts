@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   await supabase
     .from('leagues')
-    .update({ draft_status: 'in_progress', draft_type: 'mystery' })
+    .update({ draft_status: 'in_progress', draft_type: 'auction' })
     .eq('id', params.id);
 
   return NextResponse.json({ ok: true });

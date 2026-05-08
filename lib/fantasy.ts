@@ -43,7 +43,9 @@ export const PACK_PRICES: Record<PlayerTier, number> = {
   bronze: 5,
 };
 
-export const DRAFT_BUDGET = 100;
+export const DRAFT_BUDGET = 500_000;
+export const ROSTER_SIZE = 8;
+export const PACK_LIFETIME_HOURS = 12;
 
 // Probability of drawing each tier when opening a given pack type
 export const PACK_WEIGHTS: Record<PlayerTier, Record<PlayerTier, number>> = {
@@ -144,4 +146,39 @@ export function computeDefaultStarters(
     starters.push(...sorted.slice(0, slots).map(p => p.player_id));
   }
   return starters;
+}
+
+// ─── Auction Draft ─────────────────────────────────────────────
+
+export type AuctionTier = 'elite' | 'star' | 'basique';
+
+export const TIER_MIN_BIDS: Record<AuctionTier, number> = {
+  elite: 30_000,
+  star: 10_000,
+  basique: 0,
+};
+
+export const AUCTION_PACK_COMPOSITION: AuctionTier[] = [
+  'elite', 'star', 'star', 'basique', 'basique'
+];
+
+export const AUCTION_TIER_CONFIG: Record<AuctionTier, { label: string; color: string; bg: string }> = {
+  elite:   { label: 'Élite',   color: 'text-purple-400', bg: 'bg-purple-900/30 border-purple-500/40' },
+  star:    { label: 'Star',    color: 'text-yellow-400', bg: 'bg-yellow-900/20 border-yellow-500/30' },
+  basique: { label: 'Basique', color: 'text-slate-300',  bg: 'bg-slate-700/30 border-slate-600/30' },
+};
+
+export function assignAuctionTier(fantasy: number, p5: number, p25: number): AuctionTier {
+  if (fantasy >= p5) return 'elite';
+  if (fantasy >= p25) return 'star';
+  return 'basique';
+}
+
+export function computeAuctionTierThresholds(avgFantasies: number[]): { p5: number; p25: number } {
+  const sorted = [...avgFantasies].sort((a, b) => b - a);
+  const len = sorted.length;
+  return {
+    p5:  sorted[Math.max(0, Math.floor(len * 0.05))] ?? 0,
+    p25: sorted[Math.max(0, Math.floor(len * 0.25))] ?? 0,
+  };
 }
