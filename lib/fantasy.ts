@@ -44,7 +44,8 @@ export const PACK_PRICES: Record<PlayerTier, number> = {
 };
 
 export const DRAFT_BUDGET = 500_000;
-export const MIN_BID = 10_000;
+export const ROSTER_SIZE = 8;
+export const PACK_LIFETIME_HOURS = 12;
 
 // Probability of drawing each tier when opening a given pack type
 export const PACK_WEIGHTS: Record<PlayerTier, Record<PlayerTier, number>> = {
@@ -150,6 +151,12 @@ export function computeDefaultStarters(
 // ─── Auction Draft ─────────────────────────────────────────────
 
 export type AuctionTier = 'elite' | 'star' | 'basique';
+
+export const TIER_MIN_BIDS: Record<AuctionTier, number> = {
+  elite: 30_000,
+  star: 10_000,
+  basique: 0,
+};
 
 export const AUCTION_PACK_COMPOSITION: AuctionTier[] = [
   'elite', 'star', 'star', 'basique', 'basique'

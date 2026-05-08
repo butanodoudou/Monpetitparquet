@@ -3,12 +3,21 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import {
-  AUCTION_TIER_CONFIG,
+  AUCTION_TIER_CONFIG, TIER_MIN_BIDS,
   type AuctionTier, type PositionGroup,
 } from '@/lib/fantasy';
 
-const MIN_BID = 10_000;
 const fmt = (n: number) => '$' + n.toLocaleString('fr-FR');
+
+function fmtCountdown(ms: number): string {
+  if (ms <= 0) return 'Expiré';
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const s = Math.floor((ms % 60_000) / 1_000);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 interface AuctionPlayer {
   id: number; name: string; team: string; position: string;
@@ -24,6 +33,7 @@ interface CurrentPack {
   myBids: Record<number, number>;
   submittedUserIds: string[];
   winners: Record<string, PackWinner | null> | null;
+  expiresAt: string | null;
 }
 
 interface Member {
@@ -54,7 +64,9 @@ export default function DraftPage() {
   const [submitting, setSubmitting] = useState(false);
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState('');
+  const [countdown, setCountdown] = useState('');
   const lastPackIdRef = useRef<string | null>(null);
+  const autoClosingRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -69,12 +81,32 @@ export default function DraftPage() {
       lastPackIdRef.current = data.currentPack?.id ?? null;
       const serverBids = data.currentPack?.myBids ?? {};
       const hasServerBids = Object.values(serverBids).some(v => v > 0);
-      if (!hasServerBids && data.currentPack && data.myCredits >= MIN_BID * data.currentPack.players.length) {
+      if (!hasServerBids && data.currentPack) {
         const prefilled: Record<number, number> = {};
-        for (const p of data.currentPack.players) prefilled[p.id] = MIN_BID;
+        for (const p of data.currentPack.players) {
+          prefilled[p.id] = TIER_MIN_BIDS[p.tier];
+        }
         setLocalBids(prefilled);
       } else {
         setLocalBids(serverBids);
+      }
+    }
+
+    // Auto-close expired packs (any member can trigger)
+    if (
+      data.currentPack?.status === 'bidding' &&
+      data.currentPack?.expiresAt &&
+      new Date(data.currentPack.expiresAt).getTime() < Date.now() &&
+      !autoClosingRef.current
+    ) {
+      autoClosingRef.current = true;
+      try {
+        await fetch(`/api/draft/${leagueId}/auto-close`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } finally {
+        autoClosingRef.current = false;
       }
     }
 
@@ -87,6 +119,16 @@ export default function DraftPage() {
     const interval = setInterval(load, 3000);
     return () => clearInterval(interval);
   }, [token, leagueId]);
+
+  // Live countdown
+  useEffect(() => {
+    const expiresAt = state?.currentPack?.expiresAt;
+    if (!expiresAt || state?.currentPack?.status !== 'bidding') { setCountdown(''); return; }
+    const tick = () => setCountdown(fmtCountdown(new Date(expiresAt).getTime() - Date.now()));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [state?.currentPack?.expiresAt, state?.currentPack?.status]);
 
   const drawPack = async () => {
     if (!token) return;
@@ -150,7 +192,7 @@ export default function DraftPage() {
       <div className="flex flex-col min-h-dvh bg-slate-900 items-center justify-center px-4 text-center">
         <div className="text-6xl mb-4">🎉</div>
         <h1 className="text-3xl font-black text-slate-100 mb-2">Draft terminée !</h1>
-        <p className="text-slate-400 mb-6">Plus personne n'a assez de budget. Bonne chance !</p>
+        <p className="text-slate-400 mb-6">Tous les managers ont leur roster complet. Bonne chance !</p>
         <button className="btn-primary max-w-xs" onClick={() => router.push(`/leagues/${leagueId}/team`)}>
           Voir mon équipe →
         </button>
@@ -168,8 +210,10 @@ export default function DraftPage() {
   const totalBid = Object.values(localBids).reduce((s, v) => s + (v || 0), 0);
   const budgetAfterBids = state.myCredits - totalBid;
   const budgetOk = budgetAfterBids >= 0;
-  const packSize = pack?.players.length ?? 5;
-  const canAffordMin = state.myCredits >= MIN_BID * packSize;
+
+  const isExpired = pack?.status === 'bidding' && pack.expiresAt
+    ? new Date(pack.expiresAt).getTime() < Date.now()
+    : false;
 
   return (
     <div className="flex flex-col min-h-dvh bg-slate-900">
@@ -178,8 +222,19 @@ export default function DraftPage() {
         <div>
           <div className="text-slate-100 font-black text-base">Draft · Enchères</div>
           {pack && (
-            <div className="text-slate-400 text-xs">
-              Pack #{pack.packNumber} · {pack.status === 'bidding' ? `${submittedCount}/${totalMembers} soumis` : 'Résultats'}
+            <div className="text-slate-400 text-xs flex items-center gap-2">
+              <span>Pack #{pack.packNumber}</span>
+              {pack.status === 'bidding' && (
+                <>
+                  <span>· {submittedCount}/{totalMembers} soumis</span>
+                  {countdown && (
+                    <span className={`font-semibold ${isExpired ? 'text-red-400' : 'text-slate-400'}`}>
+                      · ⏱ {countdown}
+                    </span>
+                  )}
+                </>
+              )}
+              {pack.status === 'closed' && <span>· Résultats</span>}
             </div>
           )}
           {!pack && <div className="text-slate-400 text-xs">Prêt à démarrer</div>}
@@ -204,8 +259,9 @@ export default function DraftPage() {
               {state.isCommissioner ? (
                 <>
                   <div className="text-slate-100 font-bold text-base mb-1">Prêt à tirer un pack ?</div>
-                  <div className="text-slate-500 text-sm mb-5">
-                    5 joueurs révélés à tous · Enchères silencieuses · Le plus offrant gagne · Min {fmt(MIN_BID)}/joueur
+                  <div className="text-slate-500 text-sm mb-1">5 joueurs · Enchères silencieuses · 12h pour miser</div>
+                  <div className="text-slate-600 text-xs mb-5">
+                    Élite min {fmt(30_000)} · Star min {fmt(10_000)} · Basique gratuit
                   </div>
                   <button onClick={drawPack} disabled={drawing} className="btn-primary max-w-xs">
                     {drawing ? '⏳ Tirage…' : '🎴 Tirer le pack #1'}
@@ -231,7 +287,7 @@ export default function DraftPage() {
                     <div className="text-slate-200 text-xs font-semibold truncate">
                       {m.username}{m.userId === myId && <span className="text-brand ml-1">(moi)</span>}
                     </div>
-                    <div className="text-slate-500 text-[10px]">{m.playerCount} joueur{m.playerCount > 1 ? 's' : ''}</div>
+                    <div className="text-slate-500 text-[10px]">{m.playerCount} joueur{m.playerCount !== 1 ? 's' : ''}</div>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="text-xs font-black text-brand">{fmt(m.credits)}</div>
@@ -260,15 +316,18 @@ export default function DraftPage() {
                   {pack.players.map(player => {
                     const cfg = AUCTION_TIER_CONFIG[player.tier];
                     const myBid = pack.myBids[player.id] ?? 0;
+                    const tierMin = TIER_MIN_BIDS[player.tier];
                     return (
                       <div key={player.id} className={`rounded-xl border p-2.5 flex items-center gap-2.5 ${cfg.bg}`}>
-                        <span className={`text-[10px] font-black ${cfg.color} w-12 text-center`}>{TIER_EMOJI[player.tier]} {cfg.label}</span>
+                        <span className={`text-[10px] font-black ${cfg.color} w-14 text-center shrink-0`}>
+                          {TIER_EMOJI[player.tier]} {cfg.label}
+                        </span>
                         <div className="flex-1 min-w-0">
                           <div className="text-slate-100 font-semibold text-xs truncate">{player.name}</div>
                           <div className="text-slate-500 text-[10px]">{player.position} · {player.team}</div>
                         </div>
-                        <div className={`font-black text-sm flex-shrink-0 ${myBid > 0 ? 'text-brand' : 'text-slate-600'}`}>
-                          {myBid > 0 ? fmt(myBid) : '—'}
+                        <div className={`font-black text-sm flex-shrink-0 ${myBid >= tierMin && myBid > 0 ? 'text-brand' : myBid === 0 && tierMin === 0 ? 'text-slate-400' : 'text-slate-600'}`}>
+                          {myBid >= tierMin || tierMin === 0 ? fmt(myBid) : '—'}
                         </div>
                       </div>
                     );
@@ -283,11 +342,8 @@ export default function DraftPage() {
                       </button>
                     )}
                     {!allSubmitted && (
-                      <button
-                        onClick={closePack}
-                        disabled={closing}
-                        className="w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold"
-                      >
+                      <button onClick={closePack} disabled={closing}
+                        className="w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold">
                         {closing ? '⏳…' : '⏭ Fermer quand même'}
                       </button>
                     )}
@@ -297,103 +353,93 @@ export default function DraftPage() {
             ) : (
               /* Bid input view */
               <div>
-                {!canAffordMin ? (
-                  /* Budget épuisé */
-                  <div className="text-center py-6 mb-4 bg-slate-800 border border-slate-700 rounded-2xl">
-                    <div className="text-3xl mb-2">💸</div>
-                    <div className="text-slate-300 font-bold text-sm mb-1">Budget insuffisant</div>
-                    <div className="text-slate-500 text-xs mb-4">
-                      Il faut au moins {fmt(MIN_BID * packSize)} pour enchérir sur ce pack.
-                      <br />Vous misez automatiquement 0$ sur tous les joueurs.
-                    </div>
-                    <button onClick={submitBids} disabled={submitting} className="btn-primary max-w-xs">
-                      {submitting ? '⏳…' : 'Confirmer (0$ sur tout)'}
-                    </button>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-slate-300 text-sm font-semibold">Tes enchères</div>
+                  <div className={`text-sm font-black ${budgetOk ? 'text-brand' : 'text-red-400'}`}>
+                    {fmt(budgetAfterBids)} restants
                   </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-slate-300 text-sm font-semibold">Tes enchères · min {fmt(MIN_BID)}/joueur</div>
-                      <div className={`text-sm font-black ${budgetOk ? 'text-brand' : 'text-red-400'}`}>
-                        {fmt(budgetAfterBids)} restants
-                      </div>
-                    </div>
+                </div>
 
-                    <div className="mb-3 bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${budgetOk ? 'bg-brand' : 'bg-red-500'}`}
-                        style={{ width: `${Math.min(100, (totalBid / Math.max(1, state.myCredits)) * 100)}%` }}
-                      />
-                    </div>
+                <div className="mb-3 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${budgetOk ? 'bg-brand' : 'bg-red-500'}`}
+                    style={{ width: `${Math.min(100, (totalBid / Math.max(1, state.myCredits)) * 100)}%` }}
+                  />
+                </div>
 
-                    <div className="space-y-2.5 mb-4">
-                      {pack.players.map(player => {
-                        const cfg = AUCTION_TIER_CONFIG[player.tier];
-                        const currentBid = localBids[player.id] ?? MIN_BID;
+                <div className="space-y-2.5 mb-4">
+                  {pack.players.map(player => {
+                    const cfg = AUCTION_TIER_CONFIG[player.tier];
+                    const tierMin = TIER_MIN_BIDS[player.tier];
+                    const canAfford = state.myCredits >= tierMin || tierMin === 0;
+                    const currentBid = localBids[player.id] ?? tierMin;
 
-                        return (
-                          <div key={player.id} className={`rounded-2xl border p-3 ${cfg.bg}`}>
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
-                                #{player.jersey_number ?? player.position[0]}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                  <span className={`text-[10px] font-black ${cfg.color}`}>
-                                    {TIER_EMOJI[player.tier]} {cfg.label}
-                                  </span>
-                                </div>
-                                <div className="text-slate-100 font-bold text-sm truncate">{player.name}</div>
-                                <div className="text-slate-400 text-[11px]">
-                                  {player.position} · {player.team} · <span className="text-slate-300">{player.season_avg_fantasy.toFixed(1)}</span> pts
-                                </div>
-                              </div>
-                              <div className="flex-shrink-0">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-slate-500 text-xs">$</span>
-                                  <input
-                                    type="number"
-                                    min={MIN_BID}
-                                    step={1000}
-                                    max={state.myCredits}
-                                    value={currentBid || ''}
-                                    placeholder={String(MIN_BID)}
-                                    onChange={e => {
-                                      const val = Math.max(MIN_BID, Math.min(state.myCredits, parseInt(e.target.value) || MIN_BID));
-                                      setLocalBids(prev => ({ ...prev, [player.id]: val }));
-                                    }}
-                                    className="w-20 bg-slate-900/60 border border-slate-600 rounded-lg px-2 py-1.5 text-center text-slate-100 font-bold text-sm focus:outline-none focus:border-brand"
-                                  />
-                                </div>
-                              </div>
+                    return (
+                      <div key={player.id} className={`rounded-2xl border p-3 ${cfg.bg} ${!canAfford ? 'opacity-50' : ''}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
+                            #{player.jersey_number ?? player.position[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className={`text-[10px] font-black ${cfg.color}`}>
+                                {TIER_EMOJI[player.tier]} {cfg.label}
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                min {fmt(tierMin)}
+                              </span>
+                            </div>
+                            <div className="text-slate-100 font-bold text-sm truncate">{player.name}</div>
+                            <div className="text-slate-400 text-[11px]">
+                              {player.position} · {player.team} · <span className="text-slate-300">{player.season_avg_fantasy.toFixed(1)}</span> pts
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-
-                    {!budgetOk && (
-                      <div className="text-center text-red-400 text-xs mb-2">
-                        Budget dépassé de {fmt(Math.abs(budgetAfterBids))}
+                          <div className="flex-shrink-0">
+                            {!canAfford ? (
+                              <div className="text-slate-600 text-xs font-bold text-center w-20">$0<br/><span className="text-[10px]">budget insuf.</span></div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-500 text-xs">$</span>
+                                <input
+                                  type="number"
+                                  min={tierMin}
+                                  step={1000}
+                                  max={state.myCredits}
+                                  value={currentBid || ''}
+                                  placeholder={String(tierMin)}
+                                  onChange={e => {
+                                    const raw = parseInt(e.target.value) || 0;
+                                    const val = raw === 0 ? 0 : Math.max(tierMin, Math.min(state.myCredits, raw));
+                                    setLocalBids(prev => ({ ...prev, [player.id]: val }));
+                                  }}
+                                  className="w-20 bg-slate-900/60 border border-slate-600 rounded-lg px-2 py-1.5 text-center text-slate-100 font-bold text-sm focus:outline-none focus:border-brand"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    );
+                  })}
+                </div>
 
-                    <button
-                      onClick={submitBids}
-                      disabled={submitting || !budgetOk}
-                      className={`btn-primary w-full py-3 ${!budgetOk ? 'opacity-40' : ''}`}
-                    >
-                      {submitting ? '⏳ Envoi…' : `Soumettre · ${fmt(totalBid)}`}
-                    </button>
-                  </>
+                {!budgetOk && (
+                  <div className="text-center text-red-400 text-xs mb-2">
+                    Budget dépassé de {fmt(Math.abs(budgetAfterBids))}
+                  </div>
                 )}
 
+                <button
+                  onClick={submitBids}
+                  disabled={submitting || !budgetOk}
+                  className={`btn-primary w-full py-3 ${!budgetOk ? 'opacity-40' : ''}`}
+                >
+                  {submitting ? '⏳ Envoi…' : `Soumettre · ${fmt(totalBid)}`}
+                </button>
+
                 {state.isCommissioner && (
-                  <button
-                    onClick={closePack}
-                    disabled={closing}
-                    className="mt-2 w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold"
-                  >
+                  <button onClick={closePack} disabled={closing}
+                    className="mt-2 w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold">
                     {closing ? '⏳…' : '⏭ Forcer la fermeture'}
                   </button>
                 )}
@@ -408,8 +454,7 @@ export default function DraftPage() {
                     ? 'bg-green-500/20 text-green-300 border border-green-500/20'
                     : 'bg-slate-700 text-slate-500 border border-slate-700'
                 }`}>
-                  <div className="w-3.5 h-3.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: m.avatarColor }} />
+                  <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.avatarColor }} />
                   {m.username}{pack.submittedUserIds.includes(m.userId) ? ' ✓' : ' …'}
                 </div>
               ))}

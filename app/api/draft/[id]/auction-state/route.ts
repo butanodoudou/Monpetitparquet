@@ -111,6 +111,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       myBids,
       submittedUserIds,
       winners: currentPack.winners ?? null,
+      expiresAt: currentPack.expires_at ?? null,
     },
     draftComplete: league.draft_status === 'completed',
   });

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import {
-  AUCTION_PACK_COMPOSITION, DRAFT_BUDGET, MIN_BID,
+  AUCTION_PACK_COMPOSITION, DRAFT_BUDGET, PACK_LIFETIME_HOURS, TIER_MIN_BIDS,
   assignAuctionTier, computeAuctionTierThresholds,
   type AuctionTier,
 } from '@/lib/fantasy';
@@ -12,40 +12,49 @@ function generateBotBids(
   credits: number,
 ): Record<number, number> {
   const packSize = players.length;
-  const minTotal = MIN_BID * packSize;
 
-  if (credits < minTotal) return Object.fromEntries(players.map(p => [p.id, 0]));
-
-  // Spend ~20% of remaining budget per pack, at least the minimum
-  const packBudget = Math.max(minTotal, Math.floor(credits * 0.20));
+  // Spend ~20% of remaining budget per pack
+  const packBudget = Math.max(0, Math.floor(credits * 0.20));
   const avgPerPlayer = packBudget / packSize;
 
   const tierMultipliers: Record<AuctionTier, [number, number]> = {
-    elite:   [1.5, 2.5],
+    elite:   [1.2, 2.0],
     star:    [0.8, 1.4],
-    basique: [0.3, 0.7],
+    basique: [0.0, 0.3],
   };
 
   const bids: Record<number, number> = {};
   let totalBid = 0;
 
   for (const player of players) {
+    const tierMin = TIER_MIN_BIDS[player.tier];
+    if (credits < tierMin) {
+      bids[player.id] = 0;
+      continue;
+    }
     const [min, max] = tierMultipliers[player.tier];
     const mult = min + Math.random() * (max - min);
-    // Round to nearest 1,000
     const raw = Math.round(avgPerPlayer * mult / 1000) * 1000;
-    bids[player.id] = Math.max(MIN_BID, raw);
+    bids[player.id] = Math.max(tierMin, raw);
     totalBid += bids[player.id];
   }
 
   if (totalBid > credits) {
-    // Scale down preserving minimum
-    const excess = totalBid - packSize * MIN_BID;
-    const budget = credits - packSize * MIN_BID;
-    const scale = Math.max(0, budget / Math.max(1, excess));
+    // Scale down excess above minimums
+    const excess = totalBid - Object.values(bids).reduce((s, v) => s + (v === 0 ? 0 : TIER_MIN_BIDS['basique']), 0);
+    const budget = credits;
     for (const id in bids) {
-      const over = bids[Number(id)] - MIN_BID;
-      bids[Number(id)] = MIN_BID + Math.floor(over * scale / 1000) * 1000;
+      const pid = Number(id);
+      const tier = players.find(p => p.id === pid)?.tier ?? 'basique';
+      const tierMin = TIER_MIN_BIDS[tier];
+      if (bids[pid] <= tierMin) continue;
+      const over = bids[pid] - tierMin;
+      bids[pid] = tierMin + Math.floor(over * (budget / Math.max(1, totalBid)) / 1000) * 1000;
+    }
+    // Final safety check
+    const newTotal = Object.values(bids).reduce((s, v) => s + v, 0);
+    if (newTotal > credits) {
+      for (const id in bids) bids[Number(id)] = TIER_MIN_BIDS[players.find(p => p.id === Number(id))?.tier ?? 'basique'];
     }
   }
 
@@ -84,6 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq('league_id', leagueId);
 
   const packNumber = (packCount ?? 0) + 1;
+  const expiresAt = new Date(Date.now() + PACK_LIFETIME_HOURS * 60 * 60 * 1000).toISOString();
 
   const { data: allPlayers } = await supabase
     .from('players')
@@ -129,6 +139,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       pack_number: packNumber,
       player_ids: selected.map(p => p.id),
       status: 'bidding',
+      expires_at: expiresAt,
     })
     .select('id')
     .single();

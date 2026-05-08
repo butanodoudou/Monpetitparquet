@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import { MIN_BID, DRAFT_BUDGET } from '@/lib/fantasy';
+import { DRAFT_BUDGET, TIER_MIN_BIDS, assignAuctionTier, computeAuctionTierThresholds } from '@/lib/fantasy';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -36,7 +36,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const packPlayerIds = pack.player_ids as number[];
   const credits = member.draft_credits ?? DRAFT_BUDGET;
-  const canAffordMin = credits >= MIN_BID * packPlayerIds.length;
+
+  // Get tier info for each player to validate minimums
+  const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy').in('id', packPlayerIds);
+  const { p5, p25 } = computeAuctionTierThresholds((allPlayersData ?? []).map(p => p.season_avg_fantasy));
+  const tierMap: Record<number, 'elite' | 'star' | 'basique'> = {};
+  for (const p of allPlayersData ?? []) {
+    tierMap[p.id] = assignAuctionTier(p.season_avg_fantasy, p5, p25);
+  }
 
   let totalBid = 0;
   for (const playerId of packPlayerIds) {
@@ -44,8 +51,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!Number.isInteger(amount) || amount < 0) {
       return NextResponse.json({ error: 'Enchère invalide' }, { status: 400 });
     }
-    if (canAffordMin && amount > 0 && amount < MIN_BID) {
-      return NextResponse.json({ error: `Mise minimum ${MIN_BID.toLocaleString()}$` }, { status: 400 });
+    const tier = tierMap[playerId] ?? 'basique';
+    const tierMin = TIER_MIN_BIDS[tier];
+    // Bid must be 0 (skip) or >= tier minimum
+    if (amount > 0 && amount < tierMin) {
+      return NextResponse.json({ error: `Mise minimum ${tierMin.toLocaleString()}$ pour un ${tier}` }, { status: 400 });
     }
     totalBid += amount;
   }
