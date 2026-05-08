@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-
-const PICK_SECONDS = 45;
+import { DRAFT_BUDGET } from '@/lib/fantasy';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -21,26 +20,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: members } = await supabase
     .from('league_members')
     .select('user_id')
-    .eq('league_id', params.id)
-    .order('created_at', { ascending: true });
+    .eq('league_id', params.id);
 
   if (!members || members.length < 2) {
     return NextResponse.json({ error: 'Au moins 2 équipes nécessaires' }, { status: 400 });
   }
 
-  // Shuffle for draft order
-  const shuffled = [...members].sort(() => Math.random() - 0.5);
-  await Promise.all(shuffled.map((m, i) =>
+  // Initialize draft credits for all members
+  await Promise.all(members.map(m =>
     supabase.from('league_members')
-      .update({ draft_position: i + 1 })
+      .update({ draft_credits: DRAFT_BUDGET })
       .eq('league_id', params.id)
       .eq('user_id', m.user_id)
   ));
 
-  const deadline = new Date(Date.now() + PICK_SECONDS * 1000).toISOString();
   await supabase
     .from('leagues')
-    .update({ draft_status: 'in_progress', current_draft_pick: 1, pick_deadline: deadline })
+    .update({ draft_status: 'in_progress', draft_type: 'mystery' })
     .eq('id', params.id);
 
   return NextResponse.json({ ok: true });
