@@ -32,7 +32,7 @@ export function buildSnakeOrder(userIds: string[], picksPerTeam: number): string
   return order;
 }
 
-// ─── Mystery Draft ────────────────────────────────────────
+// ─── Mystery Draft ────────────────────────────────────────────
 
 export type PlayerTier = 'elite' | 'gold' | 'silver' | 'bronze';
 
@@ -92,4 +92,56 @@ export function computeTierThresholds(avgFantasies: number[]): { p5: number; p20
     p20: sorted[Math.max(0, Math.floor(len * 0.20))] ?? 0,
     p50: sorted[Math.max(0, Math.floor(len * 0.50))] ?? 0,
   };
+}
+
+// ─── Position groups ────────────────────────────────────────────
+
+export type PositionGroup = 'arriere' | 'sf' | 'grand';
+
+export const POSITION_GROUP_MAP: Record<string, PositionGroup> = {
+  PG: 'arriere', SG: 'arriere',
+  SF: 'sf',
+  PF: 'grand', C: 'grand',
+};
+
+export const ROSTER_SLOTS: Record<PositionGroup, number> = { arriere: 3, sf: 2, grand: 3 };
+export const STARTER_SLOTS: Record<PositionGroup, number> = { arriere: 2, sf: 1, grand: 2 };
+
+export const GROUP_LABELS: Record<PositionGroup, string> = {
+  arriere: 'Arrières',
+  sf: 'Ailiers',
+  grand: 'Grands',
+};
+
+export function getPositionGroup(position: string): PositionGroup | null {
+  return POSITION_GROUP_MAP[position] ?? null;
+}
+
+export function getRemainingRosterSlots(players: { position: string }[]): Record<PositionGroup, number> {
+  const counts: Record<PositionGroup, number> = { arriere: 0, sf: 0, grand: 0 };
+  for (const p of players) {
+    const g = POSITION_GROUP_MAP[p.position];
+    if (g) counts[g]++;
+  }
+  return {
+    arriere: ROSTER_SLOTS.arriere - counts.arriere,
+    sf: ROSTER_SLOTS.sf - counts.sf,
+    grand: ROSTER_SLOTS.grand - counts.grand,
+  };
+}
+
+export function computeDefaultStarters(
+  roster: { player_id: number; position: string; season_avg_fantasy: number }[]
+): number[] {
+  const grouped: Record<PositionGroup, typeof roster> = { arriere: [], sf: [], grand: [] };
+  for (const p of roster) {
+    const g = POSITION_GROUP_MAP[p.position];
+    if (g) grouped[g].push(p);
+  }
+  const starters: number[] = [];
+  for (const [group, slots] of Object.entries(STARTER_SLOTS) as [PositionGroup, number][]) {
+    const sorted = [...(grouped[group] ?? [])].sort((a, b) => b.season_avg_fantasy - a.season_avg_fantasy);
+    starters.push(...sorted.slice(0, slots).map(p => p.player_id));
+  }
+  return starters;
 }

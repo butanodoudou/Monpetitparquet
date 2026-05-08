@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
+import { computeDefaultStarters } from '@/lib/fantasy';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -9,7 +10,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const supabase = db();
   const leagueId = params.id;
 
-  // 1. Current week from finished matches
   const { data: weekRow } = await supabase
     .from('matches')
     .select('week')
@@ -20,15 +20,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const currentWeek = weekRow?.week ?? 1;
 
-  // 2. All team_players for the league
   const { data: teamPlayers } = await supabase
     .from('team_players')
-    .select('user_id, player_id')
+    .select('user_id, player_id, player:players(position, season_avg_fantasy)')
     .eq('league_id', leagueId);
 
   const playerIds = (teamPlayers ?? []).map(tp => tp.player_id);
 
-  // 3. Match IDs for current week (finished)
   const { data: weekMatches } = await supabase
     .from('matches')
     .select('id')
@@ -37,25 +35,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const matchIds = (weekMatches ?? []).map(m => m.id);
 
-  // 4. Player performances for those matches and those players
-  const weekScoreByUser: Record<string, number> = {};
-
-  if (matchIds.length > 0 && playerIds.length > 0) {
-    const { data: performances } = await supabase
-      .from('player_performances')
-      .select('player_id, fantasy_score')
-      .in('match_id', matchIds)
-      .in('player_id', playerIds);
-
-    for (const perf of performances ?? []) {
-      const tp = (teamPlayers ?? []).find(t => t.player_id === perf.player_id);
-      if (!tp) continue;
-      weekScoreByUser[tp.user_id] = (weekScoreByUser[tp.user_id] ?? 0) + (perf.fantasy_score ?? 0);
-    }
-  }
-
-  // 5 & 6. Current week matchups + schedule check (parallel)
-  const [{ data: currentMatchups }, { count: scheduleCount }, { data: members }] = await Promise.all([
+  const [{ data: lineups }, { data: currentMatchups }, { count: scheduleCount }, { data: members }] = await Promise.all([
+    supabase
+      .from('weekly_lineups')
+      .select('user_id, starter_player_ids')
+      .eq('league_id', leagueId)
+      .eq('week', currentWeek),
     supabase
       .from('weekly_matchups')
       .select('id, home_user_id, away_user_id')
@@ -73,7 +58,46 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const scheduleGenerated = (scheduleCount ?? 0) > 0;
 
-  // Build member lookup
+  const lineupMap = new Map((lineups ?? []).map(l => [l.user_id, new Set<number>(l.starter_player_ids)]));
+
+  const rosterByUser = new Map<string, { player_id: number; position: string; season_avg_fantasy: number }[]>();
+  for (const tp of teamPlayers ?? []) {
+    const player = tp.player as any;
+    if (!rosterByUser.has(tp.user_id)) rosterByUser.set(tp.user_id, []);
+    rosterByUser.get(tp.user_id)!.push({
+      player_id: tp.player_id,
+      position: player?.position ?? '',
+      season_avg_fantasy: player?.season_avg_fantasy ?? 0,
+    });
+  }
+
+  const starterIdsByUser = new Map<string, Set<number>>();
+  for (const [userId, roster] of rosterByUser) {
+    if (lineupMap.has(userId)) {
+      starterIdsByUser.set(userId, lineupMap.get(userId)!);
+    } else {
+      starterIdsByUser.set(userId, new Set(computeDefaultStarters(roster)));
+    }
+  }
+
+  const weekScoreByUser: Record<string, number> = {};
+
+  if (matchIds.length > 0 && playerIds.length > 0) {
+    const { data: performances } = await supabase
+      .from('player_performances')
+      .select('player_id, fantasy_score')
+      .in('match_id', matchIds)
+      .in('player_id', playerIds);
+
+    for (const perf of performances ?? []) {
+      const tp = (teamPlayers ?? []).find(t => t.player_id === perf.player_id);
+      if (!tp) continue;
+      const userStarters = starterIdsByUser.get(tp.user_id);
+      if (!userStarters?.has(perf.player_id)) continue;
+      weekScoreByUser[tp.user_id] = (weekScoreByUser[tp.user_id] ?? 0) + (perf.fantasy_score ?? 0);
+    }
+  }
+
   const memberMap: Record<string, { team_name: string; username: string; avatar_color: string }> = {};
   for (const m of members ?? []) {
     const u = m.user as unknown as { username: string; avatar_color: string } | null;
@@ -84,7 +108,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     };
   }
 
-  // 9. Build matchup objects
   const matchups = (currentMatchups ?? []).map(mu => {
     const homeScore = weekScoreByUser[mu.home_user_id] ?? 0;
     const awayScore = weekScoreByUser[mu.away_user_id] ?? 0;
@@ -113,7 +136,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     };
   });
 
-  // 10. Past weeks W/L
   const { data: pastMatchups } = await supabase
     .from('weekly_matchups')
     .select('home_user_id, away_user_id, winner_user_id')
@@ -121,16 +143,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .lt('week', currentWeek)
     .not('winner_user_id', 'is', null);
 
-  // 11. Compute wld per user
   const wld: Record<string, { wins: number; losses: number; draws: number }> = {};
-  const ensureWld = (uid: string) => {
-    if (!wld[uid]) wld[uid] = { wins: 0, losses: 0, draws: 0 };
-  };
+  const ensureWld = (uid: string) => { if (!wld[uid]) wld[uid] = { wins: 0, losses: 0, draws: 0 }; };
 
   for (const pm of pastMatchups ?? []) {
     ensureWld(pm.home_user_id);
     ensureWld(pm.away_user_id);
-
     if (pm.winner_user_id === 'draw') {
       wld[pm.home_user_id].draws++;
       wld[pm.away_user_id].draws++;
@@ -143,11 +161,5 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
   }
 
-  return NextResponse.json({
-    currentWeek,
-    scheduleGenerated,
-    matchups,
-    weekScores: weekScoreByUser,
-    wld,
-  });
+  return NextResponse.json({ currentWeek, scheduleGenerated, matchups, weekScores: weekScoreByUser, wld });
 }

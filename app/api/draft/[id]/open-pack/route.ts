@@ -4,6 +4,7 @@ import { getAuth } from '@/lib/auth';
 import {
   PACK_PRICES, PACK_WEIGHTS, DRAFT_BUDGET,
   assignTier, weightedRandom, computeTierThresholds,
+  getPositionGroup, getRemainingRosterSlots,
   type PlayerTier,
 } from '@/lib/fantasy';
 
@@ -31,15 +32,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Crédits insuffisants' }, { status: 400 });
   }
 
-  const { count: myCount } = await supabase
+  // Get my current roster with positions
+  const { data: myRosterPlayers } = await supabase
     .from('team_players')
-    .select('*', { count: 'exact', head: true })
+    .select('player_id, player:players(position)')
     .eq('league_id', leagueId)
     .eq('user_id', auth.userId);
 
-  if ((myCount ?? 0) >= league.picks_per_team) {
+  const myCount = myRosterPlayers?.length ?? 0;
+  if (myCount >= (league.picks_per_team ?? 8)) {
     return NextResponse.json({ error: 'Roster complet' }, { status: 400 });
   }
+
+  const remaining = getRemainingRosterSlots(
+    (myRosterPlayers ?? []).map(tp => ({ position: (tp.player as any)?.position ?? '' }))
+  );
 
   const { data: existingOffer } = await supabase
     .from('draft_pack_offers')
@@ -64,6 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       offerId: existingOffer.id,
       players: orderedPlayers.map((p: any) => ({ ...p, tier: assignTier(p.season_avg_fantasy, p5, p20, p50) })),
       credits,
+      remaining,
     });
   }
 
@@ -85,9 +93,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ...(activeOffers?.flatMap(o => o.player_ids) ?? []),
   ]);
 
+  // Filter by availability AND remaining position slots
   const available = allPlayers
     .filter(p => !unavailable.has(p.id))
+    .filter(p => {
+      const group = getPositionGroup(p.position);
+      return group ? remaining[group] > 0 : false;
+    })
     .map(p => ({ ...p, tier: assignTier(p.season_avg_fantasy, p5, p20, p50) }));
+
+  if (!available.length) return NextResponse.json({ error: 'Aucun joueur disponible pour tes slots restants' }, { status: 400 });
 
   const selected: typeof available = [];
   const usedIds = new Set<number>();
@@ -124,5 +139,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .select('id')
     .single();
 
-  return NextResponse.json({ offerId: offer!.id, players: selected, credits });
+  return NextResponse.json({ offerId: offer!.id, players: selected, credits, remaining });
 }
