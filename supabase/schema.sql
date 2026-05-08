@@ -215,3 +215,23 @@ CREATE TABLE IF NOT EXISTS draft_pack_offers (
 CREATE INDEX IF NOT EXISTS idx_pack_offers_league_user ON draft_pack_offers(league_id, user_id);
 ALTER TABLE draft_pack_offers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon read pack_offers" ON draft_pack_offers FOR SELECT USING (true);
+
+-- -------------------------------------------------------
+-- Weekly Matchups (head-to-head fantasy duels)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS weekly_matchups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
+  week INTEGER NOT NULL,
+  home_user_id UUID NOT NULL REFERENCES users(id),
+  away_user_id UUID NOT NULL REFERENCES users(id),
+  home_score FLOAT DEFAULT 0,
+  away_score FLOAT DEFAULT 0,
+  winner_user_id UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matchups_week_home ON weekly_matchups(league_id, week, home_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matchups_week_away ON weekly_matchups(league_id, week, away_user_id);
+CREATE INDEX IF NOT EXISTS idx_matchups_league ON weekly_matchups(league_id);
+ALTER TABLE weekly_matchups ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon read matchups" ON weekly_matchups FOR SELECT USING (true);
