@@ -193,3 +193,25 @@ CREATE POLICY "anon read members" ON league_members FOR SELECT USING (true);
 CREATE POLICY "anon read team_players" ON team_players FOR SELECT USING (true);
 CREATE POLICY "anon read draft_picks" ON draft_picks FOR SELECT USING (true);
 -- service_role bypasses RLS for all writes (used in API routes)
+
+-- -------------------------------------------------------
+-- Mystery Draft (run these ALTER statements separately
+-- if the base schema is already applied)
+-- -------------------------------------------------------
+ALTER TABLE leagues ADD COLUMN IF NOT EXISTS draft_type TEXT DEFAULT 'mystery';
+ALTER TABLE league_members ADD COLUMN IF NOT EXISTS draft_credits INTEGER DEFAULT 100;
+
+CREATE TABLE IF NOT EXISTS draft_pack_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  tier TEXT NOT NULL CHECK (tier IN ('elite', 'gold', 'silver', 'bronze')),
+  player_ids INTEGER[] NOT NULL,
+  chosen_player_id INTEGER REFERENCES players(id),
+  credits_spent INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pack_offers_league_user ON draft_pack_offers(league_id, user_id);
+ALTER TABLE draft_pack_offers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon read pack_offers" ON draft_pack_offers FOR SELECT USING (true);
