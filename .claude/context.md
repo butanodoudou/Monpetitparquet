@@ -17,6 +17,7 @@ Les joueurs drafte de vrais joueurs NBA… pardon, Pro A, et accumulent des poin
 2. Créer ou rejoindre une ligue (code d'invitation)
 3. Le commissaire lance le draft → draft en serpent en temps réel via Supabase Realtime
 4. Les scores fantasy sont calculés automatiquement chaque soir par le cron
+5. Chaque semaine, un duel oppose deux managers — le score final intègre trois modificateurs : chimie, bonus weekend, malus défensif adverse
 
 ## URLs importantes
 - `/auth` — Connexion / inscription

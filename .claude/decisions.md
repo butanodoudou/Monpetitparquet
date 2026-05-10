@@ -126,6 +126,45 @@
 
 ---
 
+## [2025-05] Système de modificateurs de score de match
+
+**Contexte** : Le score brut (somme des fantasy scores des 5 titulaires) ne suffisait pas — on voulait récompenser les synergies de roster (même club, même nationalité), la stratégie défensive, et les bons résultats du weekend.
+
+**Décision** : Trois modificateurs cumulés, appliqués dans cet ordre :
+
+1. **Bonus chimie** : calculé sur les titulaires
+   - Même équipe réelle : **+3 pts** par paire
+   - Même nationalité : **+1.5 pts** par paire
+   - Cap à **+12 pts** total pour éviter l'abus de roster monoclubiste
+   - Paires comptées en combinaisons (pas permutations)
+
+2. **Bonus victoire weekend** : **×1.10** si ≥3 équipes réelles *distinctes* parmi tes titulaires gagnent le Samedi ou Dimanche de la semaine en cours
+   - Seuil à 3 (pas 4) : permet de stacker 3 joueurs d'un même club et de viser le bonus avec 2 autres clubs
+
+3. **Multiplicateur défensif** : appliqué sur le score de l'adversaire (pas le tien)
+   - `defensive_raw` = Σ(blocks + steals) des titulaires sur la semaine
+   - Formule : `mult = 1.0 – 0.20 × clamp(defensive_raw / 30, 0, 1)`
+   - De ×1.00 (pas de défense) à ×0.80 (≥30 blk+stl, cas extrême)
+
+**Ordre de calcul** :
+```
+score_final = (base + chimie) × weekend_mult
+puis : score_final_adverse *= ton_defensive_mult
+```
+
+**Fichiers** :
+- `lib/fantasy.ts` — `computeChemistryBonus`, `computeWeekendMultiplier`, `computeDefensiveMultiplier`
+- `app/api/leagues/[id]/week/route.ts` — application des 3 modificateurs, retour des détails dans le payload
+- `app/leagues/[id]/page.tsx` — composant `MatchupModifiers`, badges sous chaque score dans l'onglet Duels
+
+**Alternatives écartées** :
+- Seuil weekend à 4 équipes différentes : trop contraignant avec des rosters monoclubistes
+- Defensive mult absolu (paliers fixes) : formule smooth plus élégante et continue
+
+**Raison** : Enrichir le gameplay sans casser la lisibilité, récompenser la stratégie de construction de roster.
+
+---
+
 ## [2025-05] ScraperAPI comme proxy pour Sofascore
 
 **Contexte** : Sofascore est protégé par Cloudflare qui bloque toutes les requêtes serveur (Node.js et Edge Runtime Vercel) avec des challenges TLS/JS. Les headers seuls ne suffisent pas.

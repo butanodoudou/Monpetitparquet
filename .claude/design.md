@@ -55,6 +55,30 @@ pts×1 + ast×2 + reb×1.5 + stl×3 + blk×3 - to×2 + 3pts×0.5
 + bonus double-double (+5) ou triple-double (+10)
 ```
 
+## Modificateurs de score de match
+
+Appliqués dans `app/api/leagues/[id]/week/route.ts` sur les scores des titulaires.
+
+### 1. Bonus chimie (`lib/fantasy.ts:computeChemistryBonus`)
+- +3 pts par paire de titulaires dans le même vrai club (`team_id` égaux)
+- +1.5 pts par paire de compatriotes (`nationality` égale)
+- Cap : +12 pts max
+
+### 2. Bonus victoire weekend (`lib/fantasy.ts:computeWeekendMultiplier`)
+- ×1.10 si ≥3 équipes réelles **distinctes** parmi les titulaires ont gagné le Sat/Sun de la semaine
+- Plusieurs joueurs du même club = 1 seule équipe comptée
+
+### 3. Multiplicateur défensif (`lib/fantasy.ts:computeDefensiveMultiplier`)
+- `defensive_raw` = Σ(blocks + steals) des titulaires sur la semaine
+- Appliqué sur le score de **l'adversaire** : `mult = 1.0 – 0.20 × clamp(raw/30, 0, 1)`
+- Plage : ×1.00 (neutre) → ×0.80 (≥30 blk+stl)
+
+### Ordre de calcul
+```
+score_final = (base + chimie) × weekend_mult
+score_adverse_final = score_adverse × ton_defensive_mult
+```
+
 ## Draft en serpent (snake draft)
 `lib/fantasy.ts:buildSnakeOrder` — les rounds pairs inversent l'ordre des pickers.
 - Chaque pick a 45s, timer côté client
