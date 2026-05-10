@@ -96,6 +96,48 @@ export function computeTierThresholds(avgFantasies: number[]): { p5: number; p20
   };
 }
 
+// ─── Match scoring modifiers ───────────────────────────────────
+
+/** Bonus pts from same-club / same-nationality pairs among starters. Cap: 12 pts. */
+export function computeChemistryBonus(
+  starters: { team_id: number | null; nationality: string | null }[]
+): number {
+  let bonus = 0;
+  for (let i = 0; i < starters.length; i++) {
+    for (let j = i + 1; j < starters.length; j++) {
+      const a = starters[i];
+      const b = starters[j];
+      if (a.team_id !== null && a.team_id === b.team_id) bonus += 3;
+      if (a.nationality && b.nationality && a.nationality === b.nationality) bonus += 1.5;
+    }
+  }
+  return Math.min(Math.round(bonus * 10) / 10, 12);
+}
+
+/**
+ * ×1.10 if starters have ≥3 distinct winning real-team ids this weekend.
+ * Teams with multiple starters count as one.
+ */
+export function computeWeekendMultiplier(
+  starters: { team_id: number | null }[],
+  winningTeamIds: Set<number>
+): number {
+  const distinctWinners = new Set(
+    starters.map(s => s.team_id).filter((id): id is number => id !== null && winningTeamIds.has(id))
+  );
+  return distinctWinners.size >= 3 ? 1.10 : 1.00;
+}
+
+/**
+ * Multiplier applied to the opponent's score.
+ * defensiveRaw = sum of (blocks + steals) for starters over the week.
+ * Ranges smoothly from ×1.00 (no defense) to ×0.80 (defensiveRaw ≥ 30).
+ */
+export function computeDefensiveMultiplier(defensiveRaw: number): number {
+  const clamped = Math.min(defensiveRaw / 30, 1);
+  return Math.round((1.0 - 0.20 * clamped) * 1000) / 1000;
+}
+
 // ─── Position groups ────────────────────────────────────────────
 
 export type PositionGroup = 'arriere' | 'sf' | 'grand';

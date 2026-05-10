@@ -17,6 +17,7 @@ interface League {
 }
 interface MatchupSide {
   user_id: string; team_name: string; username: string; avatar_color: string; weekScore: number;
+  baseScore: number; chemBonus: number; weekendMult: number; defMultApplied: number;
 }
 interface Matchup { id: string; home: MatchupSide; away: MatchupSide; leadingUserId: string | null; }
 interface WeekData {
@@ -195,6 +196,7 @@ export default function LeagueDetailPage() {
                           <div className={`text-3xl font-black mt-1 ${myMatchup.home.user_id === user?.id ? 'text-brand' : 'text-slate-100'}`}>
                             {myMatchup.home.weekScore.toFixed(1)}
                           </div>
+                          <MatchupModifiers side={myMatchup.home} />
                         </div>
 
                         <div className="flex flex-col items-center px-2 min-w-[44px]">
@@ -213,6 +215,7 @@ export default function LeagueDetailPage() {
                           <div className={`text-3xl font-black mt-1 ${myMatchup.away.user_id === user?.id ? 'text-brand' : 'text-slate-100'}`}>
                             {myMatchup.away.weekScore.toFixed(1)}
                           </div>
+                          <MatchupModifiers side={myMatchup.away} />
                         </div>
                       </div>
                     </div>
@@ -378,6 +381,24 @@ export default function LeagueDetailPage() {
         </div>
       </div>
       <BottomNav />
+    </div>
+  );
+}
+
+function MatchupModifiers({ side }: { side: MatchupSide }) {
+  const badges: { label: string; color: string }[] = [];
+  if (side.chemBonus > 0)
+    badges.push({ label: `+${side.chemBonus.toFixed(1)} chimie`, color: 'text-purple-400' });
+  if (side.weekendMult > 1)
+    badges.push({ label: `×${side.weekendMult.toFixed(2)} weekend`, color: 'text-yellow-400' });
+  if (side.defMultApplied < 1)
+    badges.push({ label: `×${side.defMultApplied.toFixed(2)} déf. adv.`, color: 'text-red-400' });
+  if (badges.length === 0) return null;
+  return (
+    <div className="flex flex-col items-center gap-0.5 mt-1">
+      {badges.map(b => (
+        <span key={b.label} className={`text-[9px] font-semibold ${b.color}`}>{b.label}</span>
+      ))}
     </div>
   );
 }
