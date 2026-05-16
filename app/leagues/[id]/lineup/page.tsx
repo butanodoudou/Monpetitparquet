@@ -72,7 +72,7 @@ export default function LineupPage() {
 
   const isValid = () => {
     const counts: Record<PositionGroup, number> = { arriere: 0, sf: 0, grand: 0 };
-    for (const id of starterIds) {
+    for (const id of Array.from(starterIds)) {
       const p = players.find(pl => pl.id === id);
       const g = p ? POSITION_GROUP_MAP[p.position] as PositionGroup | undefined : undefined;
       if (g) counts[g]++;
@@ -87,7 +87,7 @@ export default function LineupPage() {
     const res = await fetch(`/api/leagues/${leagueId}/lineup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ starterIds: [...starterIds], week: currentWeek }),
+      body: JSON.stringify({ starterIds: Array.from(starterIds), week: currentWeek }),
     });
     const data = await res.json();
     setSaving(false);
