@@ -100,7 +100,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const starterIdsByUser = new Map<string, Set<number>>();
-  for (const [userId, roster] of rosterByUser) {
+  for (const [userId, roster] of Array.from(rosterByUser)) {
     if (lineupMap.has(userId)) {
       starterIdsByUser.set(userId, lineupMap.get(userId)!);
     } else {
