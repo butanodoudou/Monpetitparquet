@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
+import { CURRENT_SEASON } from '@/lib/sports-api';
 
 export async function GET(req: NextRequest, { params }: { params: { leagueId: string } }) {
   const auth = getAuth(req);
@@ -23,8 +24,9 @@ export async function GET(req: NextRequest, { params }: { params: { leagueId: st
 
   const { data: perfs } = await supabase
     .from('player_performances')
-    .select('player_id, fantasy_score, match:matches(status, week)')
-    .in('player_id', playerIds);
+    .select('player_id, fantasy_score, match:matches!inner(status, week, season)')
+    .in('player_id', playerIds)
+    .eq('match.season', CURRENT_SEASON);
 
   const enriched = (players ?? []).map(p => {
     const playerPerfs = (perfs ?? []).filter((pp: any) => pp.player_id === p.id);
