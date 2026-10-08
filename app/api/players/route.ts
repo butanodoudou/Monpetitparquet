@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const { data: players } = await supabase
     .from('players')
     .select('*')
+    .eq('is_active', true)
     .order('season_avg_fantasy', { ascending: false });
 
   if (!leagueId) return NextResponse.json(players ?? []);

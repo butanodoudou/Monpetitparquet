@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { fetchTeams, fetchTeamPlayers, normalizePosition } from '@/lib/sports-api';
 
+// Garde-fou : on ne désactive en masse que si le sync a ramené un effectif crédible.
+// La LNB Élite c'est 16 clubs × ~12 joueurs ≈ 190. Sous ce seuil, Sofascore a probablement
+// répondu partiellement et on préfère ne rien désactiver.
+const MIN_PLAYERS_TO_PRUNE = 120;
+
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-cron-secret') ?? new URL(req.url).searchParams.get('secret');
   if (secret !== process.env.CRON_SECRET) {
@@ -9,7 +14,8 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = db();
-  const results = { teams: 0, players: 0, errors: [] as string[] };
+  const results = { teams: 0, players: 0, deactivated: 0, pruned: false, errors: [] as string[] };
+  const activeIds = new Set<number>();
 
   try {
     const teams = await fetchTeams();
@@ -44,10 +50,35 @@ export async function POST(req: NextRequest) {
             ? new Date(player.dateOfBirthTimestamp * 1000).toISOString().slice(0, 10)
             : null,
           photo_url: `https://img.sofascore.com/api/v1/player/${player.id}/image`,
+          is_active: true,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' });
+        activeIds.add(player.id);
         results.players++;
       }
+    }
+
+    // Les joueurs plus présents dans aucun effectif de la saison en cours (clubs relégués,
+    // départs à l'étranger, fins de carrière) sortent du pool draftable sans être supprimés —
+    // leurs performances passées restent référencées.
+    if (activeIds.size >= MIN_PLAYERS_TO_PRUNE) {
+      const idList = `(${Array.from(activeIds).join(',')})`;
+      const { data: gone, error: pruneError } = await supabase
+        .from('players')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .not('id', 'in', idList)
+        .eq('is_active', true)
+        .select('id');
+
+      if (pruneError) results.errors.push(`Prune: ${pruneError.message}`);
+      else {
+        results.deactivated = gone?.length ?? 0;
+        results.pruned = true;
+      }
+    } else if (activeIds.size > 0) {
+      results.errors.push(
+        `Seulement ${activeIds.size} joueurs récupérés (< ${MIN_PLAYERS_TO_PRUNE}) — désactivation en masse ignorée.`
+      );
     }
   } catch (e: any) {
     results.errors.push(String(e.message ?? e));

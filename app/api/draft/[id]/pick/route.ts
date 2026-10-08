@@ -66,6 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .from('players')
       .select('id')
       .not('id', 'in', `(SELECT player_id FROM team_players WHERE league_id = '${params.id}')`)
+      .eq('is_active', true)
       .order('season_avg_fantasy', { ascending: false })
       .limit(1)
       .single();

@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- -------------------------------------------------------
--- Real Betclic Élite teams (from Sofascore)
+-- Clubs de LNB Élite, ex Betclic Élite (from Sofascore).
+-- Le nom de table betclic_teams est historique — conservé pour ne pas casser les FK.
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS betclic_teams (
   id INTEGER PRIMARY KEY,
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS players (
   avg_minutes REAL DEFAULT 0,
   games_played INTEGER DEFAULT 0,
   season_avg_fantasy REAL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -73,7 +75,7 @@ CREATE TABLE IF NOT EXISTS matches (
   match_date TIMESTAMPTZ NOT NULL,
   week INTEGER,
   status TEXT DEFAULT 'scheduled',
-  season TEXT DEFAULT '2025-2026',
+  season TEXT DEFAULT '2026-2027',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -187,6 +189,7 @@ CREATE TABLE IF NOT EXISTS weekly_matchups (
 -- -------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
 CREATE INDEX IF NOT EXISTS idx_players_fantasy ON players(season_avg_fantasy DESC);
+CREATE INDEX IF NOT EXISTS idx_players_active ON players(is_active, season_avg_fantasy DESC);
 CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status, match_date);
 CREATE INDEX IF NOT EXISTS idx_perf_player ON player_performances(player_id);
 CREATE INDEX IF NOT EXISTS idx_perf_match ON player_performances(match_id);

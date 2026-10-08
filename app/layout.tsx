@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Mon Petit Parquet',
-  description: 'Fantasy basketball Betclic Élite entre amis',
+  description: 'Fantasy basketball LNB Élite entre amis',
   themeColor: '#0F172A',
 };
 

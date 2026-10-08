@@ -63,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .in('id', existingOffer.player_ids);
 
     const { p5, p20, p50 } = computeTierThresholds(
-      (await supabase.from('players').select('season_avg_fantasy')).data?.map(p => p.season_avg_fantasy) ?? []
+      (await supabase.from('players').select('season_avg_fantasy').eq('is_active', true)).data?.map(p => p.season_avg_fantasy) ?? []
     );
 
     const orderedPlayers = existingOffer.player_ids.map((id: number) => players?.find(p => p.id === id)).filter(Boolean);
@@ -77,7 +77,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: allPlayers } = await supabase
     .from('players')
-    .select('id, name, team, position, jersey_number, photo_url, avg_points, avg_assists, avg_rebounds, season_avg_fantasy');
+    .select('id, name, team, position, jersey_number, photo_url, avg_points, avg_assists, avg_rebounds, season_avg_fantasy')
+    .eq('is_active', true);
 
   if (!allPlayers?.length) return NextResponse.json({ error: 'Aucun joueur en base' }, { status: 500 });
 

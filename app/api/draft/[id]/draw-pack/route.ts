@@ -97,7 +97,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: allPlayers } = await supabase
     .from('players')
-    .select('id, name, team, position, jersey_number, photo_url, avg_points, avg_assists, avg_rebounds, season_avg_fantasy');
+    .select('id, name, team, position, jersey_number, photo_url, avg_points, avg_assists, avg_rebounds, season_avg_fantasy')
+    .eq('is_active', true);
 
   if (!allPlayers?.length) return NextResponse.json({ error: 'Aucun joueur en base' }, { status: 500 });
 

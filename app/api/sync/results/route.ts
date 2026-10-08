@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
-import { fetchRecentFinishedEvents, fetchEventsByRound, fetchEventLineups } from '@/lib/sports-api';
+import { fetchRecentFinishedEvents, fetchEventsByRound, fetchEventLineups, CURRENT_SEASON } from '@/lib/sports-api';
 import { computeFantasyScore } from '@/lib/fantasy';
 
 // Called by Vercel Cron (daily at 23h) or manually with secret
@@ -45,7 +45,7 @@ async function syncResults(round?: number) {
         match_date: new Date(event.startTimestamp * 1000).toISOString(),
         week: event.roundInfo?.round ?? 0,
         status: 'finished',
-        season: '2025-2026',
+        season: CURRENT_SEASON,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
       results.matchesUpserted++;
@@ -69,6 +69,7 @@ async function syncResults(round?: number) {
             last_name: nameParts.slice(1).join(' '),
             team: event.homeTeam.id === perf.teamId ? event.homeTeam.name : event.awayTeam.name,
             photo_url: `https://img.sofascore.com/api/v1/player/${perf.player.id}/image`,
+            is_active: true,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'id', ignoreDuplicates: false });
 

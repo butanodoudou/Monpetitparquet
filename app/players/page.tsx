@@ -51,7 +51,7 @@ export default function PlayersPage() {
 
   return (
     <div className="page">
-      <TopBar title="Joueurs Betclic Élite" />
+      <TopBar title="Joueurs LNB Élite" />
 
       <div className="page-scroll">
         {/* Filters */}
@@ -103,7 +103,7 @@ export default function PlayersPage() {
             <div className="text-center py-16 card">
               <div className="text-4xl mb-3">🏀</div>
               <p className="text-slate-300 font-semibold mb-2">Aucun joueur en base</p>
-              <p className="text-slate-500 text-sm mb-4">Lance la synchronisation depuis l'admin pour importer les données réelles Betclic Élite.</p>
+              <p className="text-slate-500 text-sm mb-4">Lance la synchronisation depuis l'admin pour importer les données réelles LNB Élite.</p>
               <code className="text-xs bg-slate-700 rounded-lg px-3 py-2 text-brand block">
                 POST /api/sync/players?secret=CRON_SECRET
               </code>

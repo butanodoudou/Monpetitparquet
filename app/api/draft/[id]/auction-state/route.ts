@@ -65,7 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     });
   }
 
-  const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy');
+  const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy').eq('is_active', true);
   const { p5, p25 } = computeAuctionTierThresholds((allPlayersData ?? []).map(p => p.season_avg_fantasy));
 
   const { data: packPlayers } = await supabase

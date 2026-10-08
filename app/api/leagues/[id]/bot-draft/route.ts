@@ -109,7 +109,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // Load all players once for all bots
   const { data: allPlayers } = await supabase
     .from('players')
-    .select('id, season_avg_fantasy');
+    .select('id, season_avg_fantasy')
+    .eq('is_active', true);
 
   if (!allPlayers?.length) {
     return NextResponse.json({ error: 'Aucun joueur en base' }, { status: 500 });

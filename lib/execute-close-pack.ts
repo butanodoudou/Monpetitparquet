@@ -38,7 +38,7 @@ export async function executeClosePack(
   ]);
 
   // Compute tiers for pack players
-  const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy');
+  const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy').eq('is_active', true);
   const { p5, p25 } = computeAuctionTierThresholds((allPlayersData ?? []).map(p => p.season_avg_fantasy));
   const tierMap: Record<number, AuctionTier> = {};
   for (const p of packPlayers ?? []) {

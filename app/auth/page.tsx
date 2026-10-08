@@ -38,7 +38,7 @@ export default function AuthPage() {
           <h1 className="text-3xl font-black text-slate-100 tracking-tight">
             Mon Petit<br /><span className="text-brand">Parquet</span>
           </h1>
-          <p className="text-slate-400 text-sm mt-2">Fantasy Betclic Élite entre amis</p>
+          <p className="text-slate-400 text-sm mt-2">Fantasy LNB Élite entre amis</p>
         </div>
 
         <div className="flex bg-slate-800 rounded-xl p-1 mb-6 w-full max-w-xs">
@@ -69,7 +69,7 @@ export default function AuthPage() {
           </button>
         </form>
       </div>
-      <div className="pb-8 text-center text-xs text-slate-600">Betclic Élite Fantasy · Saison 2024-25</div>
+      <div className="pb-8 text-center text-xs text-slate-600">LNB Élite Fantasy · Saison 2026-27</div>
     </div>
   );
 }

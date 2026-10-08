@@ -178,3 +178,33 @@ puis : score_final_adverse *= ton_defensive_mult
 - GitHub Actions cron : complexité supplémentaire, moins intégré.
 
 **Raison** : Solution la plus simple, free tier largement suffisant, aucune maintenance.
+
+---
+
+## [2026-10-08] Bascule saison 2026-2027 et pool draftable par saison
+
+**Contexte** : La saison LNB Élite 2026-2027 a démarré fin septembre (J1 et J2 jouées, J3 en cours au 8 octobre), mais l'app pointait toujours sur `SEASON_ID = 79100` (2025-2026). Le cron resynchronisait donc les journées de la saison passée. Par ailleurs `player_performances` n'a pas de colonne `season` : `/api/sync/averages` moyennait toutes les perfs, saisons confondues.
+
+**Décision** :
+
+1. **Un seul point de vérité pour la saison** — `lib/sports-api.ts` exporte `SEASON_ID = 102568` (Sofascore) et `CURRENT_SEASON = '2026-2027'` (libellé base). `sync/results` écrit `matches.season = CURRENT_SEASON` au lieu de la constante en dur. Les anciens IDs sont gardés en commentaire pour les backfills historiques.
+
+2. **Moyennes scopées par saison via jointure** — `/api/sync/averages` filtre sur `matches!inner(season) = CURRENT_SEASON`. Les perfs des saisons passées restent en base mais ne comptent plus dans `season_avg_fantasy`.
+
+3. **Reset systématique avant recalcul** — la route remet à 0 les `avg_*` / `games_played` de *tous* les joueurs avant de recalculer. Sans ça, un joueur sans match cette saison garderait ses moyennes 2025-26, ce qui faussait les percentiles de tiers (calculés sur toute la table `players`).
+
+4. **Colonne `players.is_active`** — un joueur absent de tous les effectifs de la saison en cours (club relégué, départ à l'étranger, retraite) sort du pool draftable sans être supprimé. `sync/players` repose les flags à chaque passage ; toutes les requêtes du pool (`/api/players`, draw-pack, open-pack, close-pack, bot-draft, auto-pick) filtrent sur `is_active = true`.
+
+5. **Garde-fou anti-désactivation massive** — `sync/players` ne désactive personne si moins de 120 joueurs ont été récupérés (16 clubs × ~12 ≈ 190 attendus). Protège contre une réponse Sofascore partielle qui viderait le pool.
+
+6. **Renommage LNB Élite** — la compétition a perdu le naming Betclic. Libellés UI mis à jour. La table `betclic_teams` garde son nom : renommer casserait les FK pour un gain cosmétique.
+
+**Alternatives écartées** :
+- Ajouter une colonne `season` sur `player_performances` : dénormalisation redondante, `matches.season` suffit via jointure. (Rejoint la migration vers des views `player_stats` déjà notée comme à faire.)
+- Vider `player_performances` / `matches` à chaque nouvelle saison : perte de l'historique, et on veut pouvoir afficher les saisons passées plus tard.
+- Supprimer les joueurs partis : casse les FK depuis `player_performances` et `team_players`.
+- `DELETE` puis re-`INSERT` des joueurs dans `sync/players` : mêmes problèmes de FK, et perd les IDs Sofascore utilisés comme clés primaires.
+
+**Raison** : Un seul endroit à changer chaque intersaison, historique préservé, pool de draft propre dès la première ouverture de ligue.
+
+**Fichiers** : `lib/sports-api.ts`, `app/api/sync/{results,players,averages}/route.ts`, `app/api/players/route.ts`, `app/api/draft/[id]/{draw-pack,open-pack,pick,auction-state}/route.ts`, `app/api/leagues/[id]/bot-draft/route.ts`, `lib/execute-close-pack.ts`, `supabase/schema.sql`, `supabase/migrations/2026-10-08_saison-2026-2027.sql`

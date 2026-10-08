@@ -1,10 +1,13 @@
-// Sofascore unofficial API — Pro A / Betclic Élite
+// Sofascore unofficial API — LNB Élite (ex Pro A / Betclic Élite)
 // Sofascore is behind Cloudflare: route requests through ScraperAPI in production.
 // SCRAPER_API_KEY env var required on Vercel (free tier: 1000 req/month).
 
 const SOFA_BASE = 'https://api.sofascore.com/api/v1';
-export const TOURNAMENT_ID = 156;  // Pro A / Betclic Élite
-export const SEASON_ID     = 79100; // 2025-2026
+export const TOURNAMENT_ID = 156;      // LNB Élite (ex Pro A / Betclic Élite)
+export const SEASON_ID     = 102568;   // LNB Élite 26/27
+// Libellé stocké en base (matches.season). À incrémenter avec SEASON_ID.
+export const CURRENT_SEASON = '2026-2027';
+// Saisons précédentes, pour mémoire : 79100 = 25/26, 64004 = 24/25, 53266 = 23/24
 
 function buildUrl(path: string): string {
   const target = `${SOFA_BASE}${path}`;
