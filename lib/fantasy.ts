@@ -1,24 +1,66 @@
-export function computeFantasyScore(
-  points: number,
-  assists: number,
-  rebounds: number,
-  steals: number,
-  blocks: number,
-  turnovers: number,
-  threePts: number
-): number {
-  let score =
-    points * 1 +
-    assists * 2 +
-    rebounds * 1.5 +
-    steals * 3 +
-    blocks * 3 -
-    turnovers * 2 +
-    threePts * 0.5;
+// ─── Barème fantasy ───────────────────────────────────────────
+// Révisé le 2026-10-08 : le barème précédent ne pénalisait aucun tir manqué,
+// donc une soirée à 2/9 au tir avec du volume sortait un très gros score.
+// Les tentatives sont désormais mappées et l'adresse compte.
+// Voir .claude/decisions.md pour le détail et les alternatives écartées.
 
-  const doubleDigs = [points >= 10, assists >= 10, rebounds >= 10].filter(Boolean).length;
-  if (doubleDigs >= 3) score += 10;
-  else if (doubleDigs >= 2) score += 5;
+export const SCORING = {
+  point:             1,
+  assist:            1.5,
+  offensiveRebound:  1.5,  // plus rare et plus créateur de valeur qu'un rebond défensif
+  defensiveRebound:  1,
+  steal:             2,
+  block:             2,
+  turnover:         -1.5,
+  missedFieldGoal:  -0.5,
+  missedFreeThrow:  -0.5,
+  threePointerMade:  0.5,  // bonus en plus des 3 points déjà comptés
+} as const;
+
+export interface FantasyStatLine {
+  points: number;
+  assists: number;
+  rebounds: number;            // total — sert de repli si le split off/def manque
+  offensiveRebounds: number;
+  defensiveRebounds: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  threePointersMade: number;
+  fieldGoalsMade: number;
+  fieldGoalAttempts: number;
+  freeThrowsMade: number;
+  freeThrowAttempts: number;
+}
+
+export function computeFantasyScore(stat: FantasyStatLine): number {
+  // Les tentatives à 3 pts sont déjà incluses dans fieldGoalAttempts côté Sofascore,
+  // donc un seul calcul de tirs manqués couvre les 2 pts et les 3 pts.
+  const missedFieldGoals = Math.max(0, stat.fieldGoalAttempts - stat.fieldGoalsMade);
+  const missedFreeThrows = Math.max(0, stat.freeThrowAttempts - stat.freeThrowsMade);
+
+  // Repli : si Sofascore ne donne pas le split offensif/défensif mais donne un total,
+  // on valorise l'ensemble au tarif défensif (le moins généreux) plutôt que de perdre
+  // les rebonds du joueur.
+  const splitKnown = stat.offensiveRebounds > 0 || stat.defensiveRebounds > 0;
+  const reboundScore = splitKnown
+    ? stat.offensiveRebounds * SCORING.offensiveRebound +
+      stat.defensiveRebounds * SCORING.defensiveRebound
+    : stat.rebounds * SCORING.defensiveRebound;
+
+  const score =
+    stat.points             * SCORING.point +
+    stat.assists            * SCORING.assist +
+    reboundScore +
+    stat.steals             * SCORING.steal +
+    stat.blocks             * SCORING.block +
+    stat.turnovers          * SCORING.turnover +
+    missedFieldGoals        * SCORING.missedFieldGoal +
+    missedFreeThrows        * SCORING.missedFreeThrow +
+    stat.threePointersMade  * SCORING.threePointerMade;
+
+  // Plus de bonus double-double / triple-double : effet de seuil brutal (9 vs 10 rebonds
+  // valait 5 points) et le triple-double est quasi inexistant en LNB Élite (matchs de 40 min).
 
   return Math.round(score * 10) / 10;
 }

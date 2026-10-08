@@ -63,10 +63,19 @@ export interface SofaPlayerPerf {
     points?: number;
     assists?: number;
     rebounds?: number;
+    offensiveRebounds?: number;
+    defensiveRebounds?: number;
     steals?: number;
     blocks?: number;
     turnovers?: number;
+    personalFouls?: number;
     threePointsMade?: number;
+    threePointAttempts?: number;
+    fieldGoalsMade?: number;
+    fieldGoalAttempts?: number;
+    freeThrowsMade?: number;
+    freeThrowAttempts?: number;
+    plusMinus?: number;
     secondsPlayed?: number;
   };
 }

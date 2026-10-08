@@ -74,24 +74,45 @@ async function syncResults(round?: number) {
           }, { onConflict: 'id', ignoreDuplicates: false });
 
           const s = perf.statistics;
-          const pts = s.points ?? 0;
-          const ast = s.assists ?? 0;
-          const reb = s.rebounds ?? 0;
-          const stl = s.steals ?? 0;
-          const blk = s.blocks ?? 0;
-          const tov = s.turnovers ?? 0;
-          const thr = s.threePointsMade ?? 0;
+          const line = {
+            points:            s.points ?? 0,
+            assists:           s.assists ?? 0,
+            rebounds:          s.rebounds ?? 0,
+            offensiveRebounds: s.offensiveRebounds ?? 0,
+            defensiveRebounds: s.defensiveRebounds ?? 0,
+            steals:            s.steals ?? 0,
+            blocks:            s.blocks ?? 0,
+            turnovers:         s.turnovers ?? 0,
+            threePointersMade: s.threePointsMade ?? 0,
+            fieldGoalsMade:    s.fieldGoalsMade ?? 0,
+            fieldGoalAttempts: s.fieldGoalAttempts ?? 0,
+            freeThrowsMade:    s.freeThrowsMade ?? 0,
+            freeThrowAttempts: s.freeThrowAttempts ?? 0,
+          };
           const mins = Math.round((s.secondsPlayed ?? 0) / 60);
-          const fs = computeFantasyScore(pts, ast, reb, stl, blk, tov, thr);
 
           const { error: perfError } = await supabase.from('player_performances').upsert({
             player_id: perf.player.id,
             match_id: event.id,
             team_id: perf.teamId,
-            points: pts, assists: ast, rebounds: reb,
-            steals: stl, blocks: blk, turnovers: tov,
-            three_pointers: thr, minutes_played: mins,
-            fantasy_score: fs,
+            points: line.points,
+            assists: line.assists,
+            rebounds: line.rebounds,
+            offensive_rebounds: line.offensiveRebounds,
+            defensive_rebounds: line.defensiveRebounds,
+            steals: line.steals,
+            blocks: line.blocks,
+            turnovers: line.turnovers,
+            three_pointers: line.threePointersMade,
+            three_point_attempts: s.threePointAttempts ?? 0,
+            field_goals_made: line.fieldGoalsMade,
+            field_goal_attempts: line.fieldGoalAttempts,
+            free_throws_made: line.freeThrowsMade,
+            free_throw_attempts: line.freeThrowAttempts,
+            personal_fouls: s.personalFouls ?? 0,
+            plus_minus: s.plusMinus ?? 0,
+            minutes_played: mins,
+            fantasy_score: computeFantasyScore(line),
           }, { onConflict: 'player_id,match_id' });
 
           if (perfError) {

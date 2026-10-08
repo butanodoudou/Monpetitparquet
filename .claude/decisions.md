@@ -208,3 +208,46 @@ puis : score_final_adverse *= ton_defensive_mult
 **Raison** : Un seul endroit à changer chaque intersaison, historique préservé, pool de draft propre dès la première ouverture de ligue.
 
 **Fichiers** : `lib/sports-api.ts`, `app/api/sync/{results,players,averages}/route.ts`, `app/api/players/route.ts`, `app/api/draft/[id]/{draw-pack,open-pack,pick,auction-state}/route.ts`, `app/api/leagues/[id]/bot-draft/route.ts`, `lib/execute-close-pack.ts`, `supabase/schema.sql`, `supabase/migrations/2026-10-08_saison-2026-2027.sql`
+
+---
+
+## [2026-10-08] Révision du barème fantasy : l'adresse compte
+
+**Contexte** : L'utilisateur n'était pas convaincu par le barème depuis plusieurs mois sans pouvoir mettre le doigt dessus. Diagnostic sur des données réelles J1 26/27 — Justin Bibbins (Dijon) : 7 points à **2/9 au tir**, 8 passes, 6 rebonds → **35 points fantasy**. Le barème récompensait le volume et ignorait totalement l'efficacité : aucun tir manqué ne coûtait quoi que ce soit, parce qu'on ne mappait que 8 stats du box score Sofascore.
+
+**Décision** : Nouveau barème, `computeFantasyScore` prend désormais un objet `FantasyStatLine` (13 champs) au lieu de 7 arguments positionnels.
+
+| Stat | Avant | Après |
+|---|---|---|
+| Point | 1 | 1 |
+| Passe | 2 | 1.5 |
+| Rebond | 1.5 (total) | 1.5 offensif / 1.0 défensif |
+| Interception | 3 | 2 |
+| Contre | 3 | 2 |
+| Perte de balle | −2 | −1.5 |
+| **Tir manqué** | — | **−0.5** |
+| **Lancer manqué** | — | **−0.5** |
+| 3 pts réussi | +0.5 | +0.5 |
+| Bonus DD / TD | +5 / +10 | **supprimés** |
+
+Points clés :
+- Les tentatives à 3 pts étant déjà incluses dans `fieldGoalAttempts` côté Sofascore, un seul calcul de tirs manqués couvre 2 pts et 3 pts.
+- Split rebond offensif/défensif : plus rare et plus créateur de valeur. Repli au tarif défensif si Sofascore ne donne pas le split.
+- Bonus DD/TD supprimés : effet de seuil brutal (9 vs 10 rebonds = 5 points d'écart) et le triple-double est quasi inexistant en LNB Élite (matchs de 40 min, rythme plus lent) — le bonus +10 était du poids mort.
+- Interceptions et contres ramenés de 3 à 2 : ce sont les stats les plus bruitées du box score et c'étaient les mieux payées.
+- Box score complet désormais stocké (`field_goal_attempts`, `free_throws_*`, `offensive_rebounds`, `personal_fouls`, `plus_minus`…) : permet d'afficher l'adresse en front plus tard sans re-sync.
+
+**Effet mesuré** (6 profils types, script de comparaison) : tous les scores baissent de ~30%, mais **l'ordre relatif change** — le scoreur efficace (22pts à 8/12) passe de 4e à 1er, l'intérieur à double-double et le chasseur de stats reculent.
+
+**Timing** : appliqué à la J3, avant la synchro de J1 et J2 → **aucun `fantasy_score` à recalculer**. Les perfs 2025-2026 gardent l'ancien barème, assumé : elles sont exclues des moyennes et des totaux de ligue par le filtre `matches.season`.
+
+**Alternatives écartées** :
+- **Multiplicateur d'efficacité (True Shooting)** sur l'ancien barème : moins de rupture pour la ligue, mais un manager ne peut pas calculer son score de tête — illisible.
+- **Utiliser le `rating` Sofascore** comme base : boîte noire, aucun contrôle sur la pondération, et ça retire tout levier de game design.
+- **Correctif minimal** (juste enlever le bonus TD et lisser les DD) : ne traitait pas la cause, à savoir l'absence totale de pénalité sur l'adresse.
+- **Normaliser par les minutes** : avantagerait les joueurs de banc productifs, mais on draft 5 titulaires — le volume de minutes *est* une information pertinente à conserver.
+
+**À arbitrer (non tranché)** : les modificateurs de match (chimie, weekend, défensif) ont été calibrés sur les anciennes magnitudes. Le bonus chimie étant **additif en points absolus** (cap +12), son poids relatif passe de ~6.9% à ~9.6% du score d'un cinq majeur. Recalibrer le cap à ~8 (et les paires à 2 / 1) rendrait la chimie neutre par rapport à avant.
+
+**Fichiers** : `lib/fantasy.ts`, `lib/sports-api.ts` (mapping étendu), `app/api/sync/results/route.ts`, `supabase/schema.sql`, `supabase/migrations/2026-10-08_saison-2026-2027.sql`
+

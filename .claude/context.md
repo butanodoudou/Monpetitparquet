@@ -18,6 +18,8 @@ Les joueurs drafte de vrais joueurs NBA… pardon, Pro A, et accumulent des poin
 2. Créer ou rejoindre une ligue (code d'invitation)
 3. Le commissaire lance le draft → draft en serpent en temps réel via Supabase Realtime
 4. Les scores fantasy sont calculés automatiquement chaque soir par le cron
+   - Barème (révisé 2026-10-08) : `pts×1 + ast×1.5 + reb_off×1.5 + reb_def×1 + stl×2 + blk×2 − TO×1.5 − tir_manqué×0.5 − LF_manqué×0.5 + 3PM×0.5`
+   - Plus de bonus double-double / triple-double. Barème dans `SCORING` (`lib/fantasy.ts`)
 5. Chaque semaine, un duel oppose deux managers — le score final intègre trois modificateurs : chimie, bonus weekend, malus défensif adverse
 
 ## URLs importantes

@@ -29,6 +29,26 @@ UPDATE players SET
   updated_at = NOW();
 
 -- ---------------------------------------------------------------------------
+-- 5. Nouveau barème fantasy : box score complet
+--    Sofascore expose bien plus que les 8 stats qu'on mappait. On stocke les
+--    tentatives pour pouvoir pénaliser les tirs manqués (et afficher l'adresse).
+-- ---------------------------------------------------------------------------
+ALTER TABLE player_performances
+  ADD COLUMN IF NOT EXISTS offensive_rebounds   INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS defensive_rebounds   INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS three_point_attempts INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS field_goals_made     INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS field_goal_attempts  INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS free_throws_made     INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS free_throw_attempts  INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS personal_fouls       INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS plus_minus           INTEGER DEFAULT 0;
+
+-- Les perfs 2025-2026 déjà en base n'ont pas ces colonnes renseignées : leurs
+-- fantasy_score restent calculés à l'ancien barème. C'est assumé — elles sont
+-- exclues des moyennes et des totaux de ligue (filtre matches.season).
+
+-- ---------------------------------------------------------------------------
 -- Après la migration, dans cet ordre (remplacer $SECRET par CRON_SECRET) :
 --   POST /api/sync/players?secret=$SECRET            -- effectifs 26/27 + pruning
 --   POST /api/sync/results?secret=$SECRET&round=1    -- backfill J1
