@@ -28,13 +28,26 @@ const ZEROED_AVERAGES = {
   games_played: 0,
 };
 
+// Called by Vercel Cron (daily at 23h30, after sync/results) or manually with secret
+export async function GET(req: NextRequest) {
+  const secret = req.headers.get('authorization')?.replace('Bearer ', '') ??
+    new URL(req.url).searchParams.get('secret');
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+  return syncAverages();
+}
+
 export async function POST(req: NextRequest) {
   const secret = new URL(req.url).searchParams.get('secret') ??
     req.headers.get('x-cron-secret');
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
+  return syncAverages();
+}
 
+async function syncAverages() {
   const supabase = db();
 
   // Averages are per-season: join matches to keep only the current season's games.

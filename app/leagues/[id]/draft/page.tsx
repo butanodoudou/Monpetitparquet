@@ -2,8 +2,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import TopBar from '@/components/TopBar';
+import { apiFetch } from '@/lib/api-client';
 import {
-  AUCTION_TIER_CONFIG, TIER_MIN_BIDS,
+  AUCTION_TIER_CONFIG, TIER_MIN_BIDS, GROUP_LABELS, ROSTER_SLOTS, getPositionGroup,
   type AuctionTier, type PositionGroup,
 } from '@/lib/fantasy';
 
@@ -28,7 +30,7 @@ interface AuctionPlayer {
 interface PackWinner { userId: string; username: string; amount: number; }
 
 interface CurrentPack {
-  id: string; packNumber: number; status: 'bidding' | 'closed';
+  id: string; packNumber: number; status: 'bidding' | 'closing' | 'closed';
   players: AuctionPlayer[];
   myBids: Record<number, number>;
   submittedUserIds: string[];
@@ -64,17 +66,26 @@ export default function DraftPage() {
   const [submitting, setSubmitting] = useState(false);
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [countdown, setCountdown] = useState('');
   const lastPackIdRef = useRef<string | null>(null);
   const autoClosingRef = useRef(false);
 
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Erreur inattendue');
+
   const load = useCallback(async () => {
     if (!token) return;
-    const res = await fetch(`/api/draft/${leagueId}/auction-state`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const data: AuctionState = await res.json();
+    let data: AuctionState;
+    try {
+      data = await apiFetch<AuctionState>(`/api/draft/${leagueId}/auction-state`);
+    } catch (e) {
+      // On garde l'état précédent s'il existe ; sinon on affiche l'erreur (plus de spinner infini)
+      setLoadError(errMsg(e));
+      setLoading(false);
+      return;
+    }
+    if (!data) { setLoadError('Réponse vide du serveur'); setLoading(false); return; }
+    setLoadError('');
     setState(data);
 
     if (data.currentPack?.id !== lastPackIdRef.current) {
@@ -83,8 +94,11 @@ export default function DraftPage() {
       const hasServerBids = Object.values(serverBids).some(v => v > 0);
       if (!hasServerBids && data.currentPack) {
         const prefilled: Record<number, number> = {};
+        const sl = data.myRemainingSlots;
         for (const p of data.currentPack.players) {
-          prefilled[p.id] = TIER_MIN_BIDS[p.tier];
+          const g = getPositionGroup(p.position);
+          const ok = !g || (sl?.[g] ?? 0) > 0;
+          prefilled[p.id] = ok ? TIER_MIN_BIDS[p.tier] : 0;
         }
         setLocalBids(prefilled);
       } else {
@@ -92,19 +106,15 @@ export default function DraftPage() {
       }
     }
 
-    // Auto-close expired packs (any member can trigger)
-    if (
-      data.currentPack?.status === 'bidding' &&
-      data.currentPack?.expiresAt &&
-      new Date(data.currentPack.expiresAt).getTime() < Date.now() &&
-      !autoClosingRef.current
-    ) {
+    // Auto-close : pack expiré, ou bloqué en résolution (le serveur vérifie le délai de 2 min)
+    const pk = data.currentPack;
+    const expired = pk?.status === 'bidding' && !!pk.expiresAt && new Date(pk.expiresAt).getTime() < Date.now();
+    if ((expired || pk?.status === 'closing') && !autoClosingRef.current) {
       autoClosingRef.current = true;
       try {
-        await fetch(`/api/draft/${leagueId}/auto-close`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        await apiFetch(`/api/draft/${leagueId}/auto-close`, { method: 'POST' });
+      } catch {
+        // silencieux : le prochain cycle de polling réessaiera
       } finally {
         autoClosingRef.current = false;
       }
@@ -134,13 +144,14 @@ export default function DraftPage() {
     if (!token) return;
     setDrawing(true);
     setError('');
-    const res = await fetch(`/api/draft/${leagueId}/draw-pack`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setDrawing(false);
-    if (!res.ok) { setError(data.error); return; }
+    try {
+      await apiFetch(`/api/draft/${leagueId}/draw-pack`, { method: 'POST' });
+    } catch (e) {
+      setError(errMsg(e));
+      return;
+    } finally {
+      setDrawing(false);
+    }
     await load();
   };
 
@@ -150,16 +161,21 @@ export default function DraftPage() {
     setError('');
     const bidsToSend: Record<string, number> = {};
     for (const p of state.currentPack.players) {
-      bidsToSend[String(p.id)] = localBids[p.id] ?? 0;
+      const g = getPositionGroup(p.position);
+      const ok = !g || (state.myRemainingSlots?.[g] ?? 0) > 0;
+      bidsToSend[String(p.id)] = ok ? (localBids[p.id] ?? 0) : 0;
     }
-    const res = await fetch(`/api/draft/${leagueId}/submit-bids`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ bids: bidsToSend }),
-    });
-    const data = await res.json();
-    setSubmitting(false);
-    if (!res.ok) { setError(data.error); return; }
+    try {
+      await apiFetch(`/api/draft/${leagueId}/submit-bids`, {
+        method: 'POST',
+        body: JSON.stringify({ bids: bidsToSend }),
+      });
+    } catch (e) {
+      setError(errMsg(e));
+      return;
+    } finally {
+      setSubmitting(false);
+    }
     await load();
   };
 
@@ -167,14 +183,16 @@ export default function DraftPage() {
     if (!token) return;
     setClosing(true);
     setError('');
-    const res = await fetch(`/api/draft/${leagueId}/close-pack`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setClosing(false);
-    if (!res.ok) { setError(data.error); return; }
-    if (data.draftComplete) { router.replace(`/leagues/${leagueId}/team`); return; }
+    let data: any;
+    try {
+      data = await apiFetch(`/api/draft/${leagueId}/close-pack`, { method: 'POST' });
+    } catch (e) {
+      setError(errMsg(e));
+      return;
+    } finally {
+      setClosing(false);
+    }
+    if (data?.draftComplete) { router.replace(`/leagues/${leagueId}/team`); return; }
     await load();
   };
 
@@ -185,7 +203,19 @@ export default function DraftPage() {
       </div>
     );
   }
-  if (!state) return null;
+  if (!state) {
+    return (
+      <div className="flex flex-col min-h-dvh bg-slate-900">
+        <TopBar title="Draft · Enchères" backHref={`/leagues/${leagueId}`} />
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+          <div className="text-4xl mb-3">⚠️</div>
+          <p className="text-slate-300 font-semibold mb-1">Impossible de charger la draft</p>
+          <p className="text-slate-500 text-sm mb-5">{loadError || 'Erreur inconnue'}</p>
+          <button className="btn-primary max-w-xs" onClick={() => { setLoading(true); load(); }}>Réessayer</button>
+        </div>
+      </div>
+    );
+  }
 
   if (state.draftComplete) {
     return (
@@ -201,13 +231,20 @@ export default function DraftPage() {
   }
 
   const pack = state.currentPack;
+  const slots = state.myRemainingSlots;
+  // Un joueur est éligible s'il reste une place à son poste (poste inconnu : toléré)
+  const isEligible = (position: string) => {
+    const g = getPositionGroup(position);
+    return !g || (slots?.[g] ?? 0) > 0;
+  };
+
   const myId = user?.id ?? '';
   const hasSubmitted = pack?.submittedUserIds.includes(myId) ?? false;
   const submittedCount = pack?.submittedUserIds.length ?? 0;
   const totalMembers = state.members.length;
   const allSubmitted = submittedCount >= totalMembers;
 
-  const totalBid = Object.values(localBids).reduce((s, v) => s + (v || 0), 0);
+  const totalBid = (pack?.players ?? []).reduce((s, p) => s + (isEligible(p.position) ? (localBids[p.id] || 0) : 0), 0);
   const budgetAfterBids = state.myCredits - totalBid;
   const budgetOk = budgetAfterBids >= 0;
 
@@ -217,10 +254,15 @@ export default function DraftPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-slate-900">
+      <TopBar title="Draft · Enchères" backHref={`/leagues/${leagueId}`} />
+      {loadError && (
+        <div className="mx-4 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2 text-amber-400 text-xs">
+          Connexion instable : {loadError}. Nouvelle tentative automatique…
+        </div>
+      )}
       {/* Header */}
       <div className="px-4 py-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
         <div>
-          <div className="text-slate-100 font-black text-base">Draft · Enchères</div>
           {pack && (
             <div className="text-slate-400 text-xs flex items-center gap-2">
               <span>Pack #{pack.packNumber}</span>
@@ -234,6 +276,7 @@ export default function DraftPage() {
                   )}
                 </>
               )}
+              {pack.status === 'closing' && <span>· Résolution en cours…</span>}
               {pack.status === 'closed' && <span>· Résultats</span>}
             </div>
           )}
@@ -250,6 +293,29 @@ export default function DraftPage() {
       )}
 
       <div className="flex-1 overflow-y-auto px-4 pb-6 pt-3">
+
+        {/* Places restantes par poste */}
+        <div className="mb-3 flex gap-1.5">
+          {(Object.keys(ROSTER_SLOTS) as PositionGroup[]).map(g => (
+            <div key={g} className={`flex-1 rounded-xl px-2 py-1.5 text-center border ${
+              (slots?.[g] ?? 0) > 0 ? 'bg-slate-800 border-slate-700' : 'bg-red-500/10 border-red-500/30'
+            }`}>
+              <div className={`text-sm font-black ${(slots?.[g] ?? 0) > 0 ? 'text-slate-100' : 'text-red-400'}`}>
+                {slots?.[g] ?? 0}/{ROSTER_SLOTS[g]}
+              </div>
+              <div className="text-[10px] text-slate-500">{GROUP_LABELS[g]} libres</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── RÉSOLUTION EN COURS ── */}
+        {pack && pack.status === 'closing' && (
+          <div className="text-center py-12">
+            <div className="text-4xl mb-3 animate-bounce">⏳</div>
+            <div className="text-slate-100 font-bold text-base mb-1">Résolution en cours…</div>
+            <div className="text-slate-500 text-sm">Les enchères du pack #{pack.packNumber} sont en train d'être attribuées.</div>
+          </div>
+        )}
 
         {/* ── NO PACK ── */}
         {!pack && (
@@ -371,11 +437,12 @@ export default function DraftPage() {
                   {pack.players.map(player => {
                     const cfg = AUCTION_TIER_CONFIG[player.tier];
                     const tierMin = TIER_MIN_BIDS[player.tier];
-                    const canAfford = state.myCredits >= tierMin || tierMin === 0;
-                    const currentBid = localBids[player.id] ?? tierMin;
+                    const eligible = isEligible(player.position);
+                    const canAfford = eligible && (state.myCredits >= tierMin || tierMin === 0);
+                    const currentBid = eligible ? (localBids[player.id] ?? tierMin) : 0;
 
                     return (
-                      <div key={player.id} className={`rounded-2xl border p-3 ${cfg.bg} ${!canAfford ? 'opacity-50' : ''}`}>
+                      <div key={player.id} className={`rounded-2xl border p-3 ${cfg.bg} ${!canAfford ? 'opacity-50 grayscale' : ''}`}>
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
                             #{player.jersey_number ?? player.position[0]}
@@ -396,7 +463,7 @@ export default function DraftPage() {
                           </div>
                           <div className="flex-shrink-0">
                             {!canAfford ? (
-                              <div className="text-slate-600 text-xs font-bold text-center w-20">$0<br/><span className="text-[10px]">budget insuf.</span></div>
+                              <div className="text-slate-600 text-xs font-bold text-center w-20">$0<br/><span className="text-[10px]">{eligible ? 'budget insuf.' : 'poste complet'}</span></div>
                             ) : (
                               <div className="flex items-center gap-1">
                                 <span className="text-slate-500 text-xs">$</span>

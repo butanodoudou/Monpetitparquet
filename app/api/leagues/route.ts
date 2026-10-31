@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { DRAFT_BUDGET } from '@/lib/fantasy';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import { randomBytes } from 'crypto';
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: 'Erreur création ligue' }, { status: 500 });
 
-  await supabase.from('league_members').insert({ league_id: league.id, user_id: auth.userId, team_name: teamName.trim() });
+  await supabase.from('league_members').insert({ league_id: league.id, user_id: auth.userId, team_name: teamName.trim(), draft_credits: DRAFT_BUDGET });
 
   return NextResponse.json(league);
 }

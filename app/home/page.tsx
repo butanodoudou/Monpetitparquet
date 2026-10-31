@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
+import ScoringGrid from '@/components/ScoringGrid';
+import LotteryBanner from '@/components/lottery/LotteryBanner';
+import { apiFetch } from '@/lib/api-client';
 
 interface League { id: string; name: string; draft_status: string; member_count: number; team_name: string; }
 interface Match { id: number; home_team: string; away_team: string; home_score: number | null; away_score: number | null; status: string; match_date: string; }
@@ -13,8 +16,7 @@ function useApi<T>(url: string, token: string | null) {
   const [data, setData] = useState<T | null>(null);
   useEffect(() => {
     if (!token) return;
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(setData).catch(() => {});
+    apiFetch<T>(url).then(setData).catch(() => {});
   }, [url, token]);
   return data;
 }
@@ -50,6 +52,15 @@ export default function HomePage() {
             <p className="text-xl font-black text-slate-100">{user.username} 👋</p>
           </div>
         </div>
+
+        {/* Loterie du lundi : une bannière par ligue en saison */}
+        {leagues && leagues.some(l => l.draft_status === 'completed') && (
+          <div className="px-4 mt-4 space-y-2">
+            {leagues.filter(l => l.draft_status === 'completed').slice(0, 3).map(l => (
+              <LotteryBanner key={l.id} leagueId={l.id} userId={user.id} leagueName={leagues.length > 1 ? l.name : undefined} />
+            ))}
+          </div>
+        )}
 
         {/* Upcoming matches */}
         <div className="px-4 mt-4">
@@ -117,18 +128,13 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Scoring system */}
+        {/* Barème : lu depuis SCORING (lib/fantasy.ts) */}
         <div className="px-4 mt-6 mb-4">
-          <h2 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">Barème de points</h2>
-          <div className="card grid grid-cols-3 gap-3 text-center">
-            {[['Point','▲1'],['Passe','▲2'],['Rebond','▲1.5'],['Interception','▲3'],['Contre','▲3'],['Perte de balle','▼2']].map(([label, val]) => (
-              <div key={label}>
-                <div className={`font-black text-lg ${val.startsWith('▼') ? 'text-red-400' : 'text-brand'}`}>{val.replace('▲','+').replace('▼','-')}</div>
-                <div className="text-xs text-slate-500">{label}</div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-slate-400 text-xs font-bold uppercase tracking-widest">Barème de points</h2>
+            <Link href="/rules" className="text-brand text-xs font-semibold">Règles →</Link>
           </div>
-          <p className="text-xs text-slate-500 text-center mt-2">+5 double-double · +10 triple-double</p>
+          <ScoringGrid />
         </div>
       </div>
 

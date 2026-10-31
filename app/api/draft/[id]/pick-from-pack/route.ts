@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { CURRENT_SEASON } from '@/lib/sports-api';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import { PACK_PRICES } from '@/lib/fantasy';
@@ -77,7 +78,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const { count: existingCount } = await supabase
       .from('weekly_matchups')
       .select('id', { count: 'exact', head: true })
-      .eq('league_id', leagueId);
+      .eq('league_id', leagueId)
+      .eq('season', CURRENT_SEASON);
 
     if ((existingCount ?? 0) === 0) {
       const { data: allMembers } = await supabase
@@ -92,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         for (let week = 1; week <= SEASON_WEEKS; week++) {
           const round = baseRounds[(week - 1) % baseRounds.length];
           for (const [homeUserId, awayUserId] of round) {
-            rows.push({ league_id: leagueId, week, home_user_id: homeUserId, away_user_id: awayUserId });
+            rows.push({ league_id: leagueId, season: CURRENT_SEASON, week, home_user_id: homeUserId, away_user_id: awayUserId });
           }
         }
         await supabase.from('weekly_matchups').insert(rows);

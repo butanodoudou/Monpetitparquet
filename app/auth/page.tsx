@@ -11,7 +11,13 @@ export default function AuthPage() {
   const { token, setAuth } = useAuthStore();
   const router = useRouter();
 
-  useEffect(() => { if (token) router.replace('/home'); }, [token]);
+  // Retour vers la page d'origine (ex. lien d'invitation) : chemin interne uniquement
+  const nextUrl = () => {
+    const next = new URLSearchParams(window.location.search).get('next');
+    return next && next.startsWith('/') && !next.startsWith('//') ? next : '/home';
+  };
+
+  useEffect(() => { if (token) router.replace(nextUrl()); }, [token]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +31,7 @@ export default function AuthPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
       setAuth(data.token, data.user);
-      router.replace('/home');
+      router.replace(nextUrl());
     } catch { setError('Erreur réseau'); }
     finally { setLoading(false); }
   };

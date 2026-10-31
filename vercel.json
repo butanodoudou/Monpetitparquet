@@ -1,5 +1,7 @@
 {
   "crons": [
-    { "path": "/api/sync/results", "schedule": "0 23 * * *" }
+    { "path": "/api/sync/results", "schedule": "0 23 * * *" },
+    { "path": "/api/sync/averages", "schedule": "30 23 * * *" },
+    { "path": "/api/lottery/run", "schedule": "0 8 * * 1" }
   ]
 }

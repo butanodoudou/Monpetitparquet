@@ -1,41 +1,96 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { CURRENT_SEASON } from '@/lib/sports-api';
 import {
-  TIER_MIN_BIDS, ROSTER_SIZE, AUCTION_PACK_COMPOSITION,
-  assignAuctionTier, computeAuctionTierThresholds,
-  type AuctionTier,
+  TIER_MIN_BIDS, ROSTER_SIZE, ROSTER_SLOTS,
+  assignAuctionTier, computeAuctionTierThresholds, getPositionGroup,
+  type AuctionTier, type PositionGroup,
 } from '@/lib/fantasy';
 import { buildRoundRobin } from '@/lib/schedule';
 
 const SEASON_WEEKS = 30;
+// Un pack resté en 'closing' au-delà de ce délai est considéré comme planté et retraité
+export const CLOSING_STALE_MS = 2 * 60 * 1000;
 
 export async function executeClosePack(
   supabase: SupabaseClient,
   leagueId: string,
 ): Promise<{ ok: boolean; winners?: Record<string, any>; draftComplete?: boolean; error?: string }> {
-  const { data: pack } = await supabase
+  const nowIso = new Date().toISOString();
+
+  let { data: pack } = await supabase
     .from('auction_packs')
     .select('*')
     .eq('league_id', leagueId)
     .eq('status', 'bidding')
     .maybeSingle();
 
+  let resumed = false;
+
+  if (pack) {
+    // Passage en 'closing' atomique pour éviter les courses
+    const { data: claimed } = await supabase
+      .from('auction_packs')
+      .update({ status: 'closing', closing_started_at: nowIso })
+      .eq('id', pack.id)
+      .eq('status', 'bidding')
+      .select('id');
+    if (!claimed || claimed.length === 0) return { ok: true, winners: {}, draftComplete: false }; // déjà en cours de fermeture
+  } else {
+    // Reprise : pack bloqué en 'closing' depuis plus de 2 minutes
+    const staleBefore = new Date(Date.now() - CLOSING_STALE_MS).toISOString();
+    const { data: stuck } = await supabase
+      .from('auction_packs')
+      .select('*')
+      .eq('league_id', leagueId)
+      .eq('status', 'closing')
+      .or(`closing_started_at.is.null,closing_started_at.lt.${staleBefore}`)
+      .maybeSingle();
+    if (!stuck) return { ok: false, error: 'Aucun pack en cours' };
+
+    // Re-réservation atomique : un seul appelant reprend le pack
+    let reclaim = supabase
+      .from('auction_packs')
+      .update({ closing_started_at: nowIso })
+      .eq('id', stuck.id)
+      .eq('status', 'closing');
+    reclaim = stuck.closing_started_at
+      ? reclaim.eq('closing_started_at', stuck.closing_started_at)
+      : reclaim.is('closing_started_at', null);
+    const { data: reclaimed } = await reclaim.select('id');
+    if (!reclaimed || reclaimed.length === 0) return { ok: true, winners: {}, draftComplete: false };
+    pack = stuck;
+    resumed = true;
+  }
   if (!pack) return { ok: false, error: 'Aucun pack en cours' };
-
-  // Mark pack as closing atomically to prevent race conditions
-  const { data: claimed } = await supabase
-    .from('auction_packs')
-    .update({ status: 'closing' })
-    .eq('id', pack.id)
-    .eq('status', 'bidding')
-    .select('id');
-
-  if (!claimed || claimed.length === 0) return { ok: true, winners: {}, draftComplete: false }; // already being closed
 
   const [{ data: existingBids }, { data: packPlayers }, { data: members }] = await Promise.all([
     supabase.from('auction_bids').select('user_id, player_id, amount, submitted_at').eq('pack_id', pack.id),
     supabase.from('players').select('id, name, position, season_avg_fantasy').in('id', pack.player_ids as number[]),
     supabase.from('league_members').select('user_id, draft_credits, user:users(username)').eq('league_id', leagueId),
   ]);
+
+  // Rosters actuels : taille et places occupées par poste (pour l'éligibilité)
+  const { data: currentTeam } = await supabase
+    .from('team_players')
+    .select('user_id, player_id, player:players(position)')
+    .eq('league_id', leagueId);
+  const ownerById: Record<number, string> = {};
+  const rosterCount: Record<string, number> = {};
+  const groupCount: Record<string, Record<PositionGroup, number>> = {};
+  (currentTeam ?? []).forEach((tp: any) => {
+    ownerById[tp.player_id] = tp.user_id;
+    rosterCount[tp.user_id] = (rosterCount[tp.user_id] ?? 0) + 1;
+    const g = getPositionGroup(tp.player?.position ?? '');
+    if (g) {
+      if (!groupCount[tp.user_id]) groupCount[tp.user_id] = { arriere: 0, sf: 0, grand: 0 };
+      groupCount[tp.user_id][g]++;
+    }
+  });
+  const hasFreeSlot = (userId: string, group: PositionGroup | null): boolean => {
+    if ((rosterCount[userId] ?? 0) >= ROSTER_SIZE) return false;
+    if (!group) return true;
+    return (groupCount[userId]?.[group] ?? 0) < ROSTER_SLOTS[group];
+  };
 
   // Compute tiers for pack players
   const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy').eq('is_active', true);
@@ -96,9 +151,19 @@ export async function executeClosePack(
   let pickNumber = (existingPickCount ?? 0) + 1;
   const winners: Record<string, { userId: string; username: string; amount: number } | null> = {};
   const teamPlayersToInsert: { league_id: string; user_id: string; player_id: number }[] = [];
-  const draftPicksToInsert: { league_id: string; user_id: string; player_id: number; pick_number: number }[] = [];
+  const draftPicksToInsert: { league_id: string; user_id: string; player_id: number; pick_number: number; round: number }[] = [];
+  const memberCount = Math.max(1, (members ?? []).length);
+  const positionById: Record<number, string> = {};
+  for (const p of packPlayers ?? []) positionById[p.id] = p.position;
 
   for (const playerId of pack.player_ids as number[]) {
+    // Reprise après plantage : joueur déjà attribué lors du passage précédent
+    if (resumed && ownerById[playerId]) {
+      // Le montant exact n'est pas retrouvable : 0 par défaut
+      winners[String(playerId)] = { userId: ownerById[playerId], username: usernameMap[ownerById[playerId]] ?? '?', amount: 0 };
+      continue;
+    }
+    const group = getPositionGroup(positionById[playerId] ?? '');
     const tier = tierMap[playerId] ?? 'basique';
     const tierMin = TIER_MIN_BIDS[tier];
 
@@ -113,13 +178,24 @@ export async function executeClosePack(
     for (const bid of playerBids) {
       const userCredits = creditsMap[bid.user_id] ?? 0;
       if (userCredits < bid.amount) continue;
+      // Pas de place libre à ce poste (ou roster plein) : au suivant
+      if (!hasFreeSlot(bid.user_id, group)) continue;
       winner = bid;
       break;
     }
 
     if (winner) {
       teamPlayersToInsert.push({ league_id: leagueId, user_id: winner.user_id, player_id: playerId });
-      draftPicksToInsert.push({ league_id: leagueId, user_id: winner.user_id, player_id: playerId, pick_number: pickNumber++ });
+      draftPicksToInsert.push({
+        league_id: leagueId, user_id: winner.user_id, player_id: playerId,
+        pick_number: pickNumber, round: Math.floor((pickNumber - 1) / memberCount) + 1,
+      });
+      pickNumber++;
+      rosterCount[winner.user_id] = (rosterCount[winner.user_id] ?? 0) + 1;
+      if (group) {
+        if (!groupCount[winner.user_id]) groupCount[winner.user_id] = { arriere: 0, sf: 0, grand: 0 };
+        groupCount[winner.user_id][group]++;
+      }
       creditsMap[winner.user_id] -= winner.amount;
       winners[String(playerId)] = { userId: winner.user_id, username: usernameMap[winner.user_id] ?? '?', amount: winner.amount };
     } else {
@@ -127,11 +203,18 @@ export async function executeClosePack(
     }
   }
 
-  if (teamPlayersToInsert.length > 0) await supabase.from('team_players').insert(teamPlayersToInsert);
-  if (draftPicksToInsert.length > 0) await supabase.from('draft_picks').insert(draftPicksToInsert);
+  // En cas d'erreur, le pack reste en 'closing' et sera repris par auto-close (> 2 min)
+  if (teamPlayersToInsert.length > 0) {
+    const { error: tpErr } = await supabase.from('team_players').insert(teamPlayersToInsert);
+    if (tpErr) return { ok: false, error: `Erreur attribution des joueurs : ${tpErr.message}` };
+  }
+  if (draftPicksToInsert.length > 0) {
+    const { error: dpErr } = await supabase.from('draft_picks').insert(draftPicksToInsert);
+    if (dpErr) return { ok: false, error: `Erreur enregistrement des picks : ${dpErr.message}` };
+  }
 
   const changedUsers = Object.values(winners).filter(Boolean).map(w => w!.userId).filter((v, i, a) => a.indexOf(v) === i);
-  await Promise.all(
+  const creditResults = await Promise.all(
     changedUsers.map(userId =>
       supabase.from('league_members')
         .update({ draft_credits: creditsMap[userId] })
@@ -139,8 +222,11 @@ export async function executeClosePack(
         .eq('user_id', userId)
     )
   );
+  const creditErr = creditResults.find(r => r.error)?.error;
+  if (creditErr) return { ok: false, error: `Erreur mise à jour des budgets : ${creditErr.message}` };
 
-  await supabase.from('auction_packs').update({ status: 'closed', winners }).eq('id', pack.id);
+  const { error: closeErr } = await supabase.from('auction_packs').update({ status: 'closed', winners }).eq('id', pack.id);
+  if (closeErr) return { ok: false, error: `Erreur clôture du pack : ${closeErr.message}` };
 
   // Draft complete when everyone has >= ROSTER_SIZE players
   const { data: allMembersCheck } = await supabase.from('league_members').select('user_id').eq('league_id', leagueId);
@@ -154,7 +240,7 @@ export async function executeClosePack(
     await supabase.from('leagues').update({ draft_status: 'completed' }).eq('id', leagueId);
 
     const { count: scheduleExists } = await supabase
-      .from('weekly_matchups').select('id', { count: 'exact', head: true }).eq('league_id', leagueId);
+      .from('weekly_matchups').select('id', { count: 'exact', head: true }).eq('league_id', leagueId).eq('season', CURRENT_SEASON);
 
     if ((scheduleExists ?? 0) === 0 && allMembersCheck && allMembersCheck.length >= 2) {
       const userIds = allMembersCheck.map(m => m.user_id);
@@ -163,7 +249,7 @@ export async function executeClosePack(
       for (let week = 1; week <= SEASON_WEEKS; week++) {
         const round = baseRounds[(week - 1) % baseRounds.length];
         for (const [h, a] of round) {
-          rows.push({ league_id: leagueId, week, home_user_id: h, away_user_id: a });
+          rows.push({ league_id: leagueId, season: CURRENT_SEASON, week, home_user_id: h, away_user_id: a });
         }
       }
       await supabase.from('weekly_matchups').insert(rows);

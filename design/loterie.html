@@ -1,0 +1,307 @@
+<!--
+NOTES DEV (maquette, pas de code app)
+1. Composants : LotteryPage (3 états via session.status), TicketOdds, DrawOrderList, PackGrid/PackTile, TurnTimer (anneau SVG calé sur pick_deadline), EventFeed, PickSheet (bottom sheet), PackReveal, RevealCard, ReleasePicker, LotteryBanner (3 variantes).
+2. PackReveal = 3 étapes : pack fermé (tap) -> déchirure + flash (400 ms) -> cartes retournées une à une (rotateY 180->0, 280 ms de décalage, ordre basique, basique, star, star, élite). L'élite arrive en dernier avec halo violet et reflet qui balaie la carte. Ici en CSS ; en prod : motion.div + variants + staggerChildren, AnimatePresence pour changer d'étape.
+3. Ordre de tirage : lignes qui glissent (x -12 -> 0, opacity) avec 450 ms de décalage, la ligne du joueur connecté s'allume en ambre. Respecter prefers-reduced-motion (useReducedMotion : plus de flip, fondu simple).
+4. ReleasePicker : n'active que les joueurs du même groupe de poste que la carte choisie (3 arr / 2 ail / 3 int) ; les autres sont grisés. Pas de picker si roster < 8. Le player_ids d'un pack fermé n'existe jamais côté client : les cartes viennent de la réponse de l'ouverture du pack.
+5. Couleurs de tiers : AUCTION_TIER_CONFIG (elite violet, star jaune, basique slate) ; grille de packs et fil d'événements réutilisent les mêmes classes. Timer < 10 s : anneau rouge + pulse.
+-->
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loterie du lundi - maquette</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--amber:#F59E0B}
+body{background:#020617;color:#e2e8f0;font-family:Inter,system-ui,sans-serif}
+.num{font-family:'Barlow Condensed',Inter,sans-serif;font-variant-numeric:tabular-nums}
+.frame{width:390px;max-width:100%;margin:0 auto;background:#0b1220;border:1px solid #1e293b;border-radius:20px;overflow:hidden;position:relative}
+.lbl{width:390px;max-width:100%;margin:40px auto 10px;padding:0 4px;font-size:13px;color:#94a3b8;line-height:1.5}
+.lbl b{color:#F59E0B;font-weight:600}
+button:focus-visible,a:focus-visible{outline:2px solid #F59E0B;outline-offset:2px}
+.card{position:relative;border-radius:12px;padding:8px 8px 9px;border:1.5px solid var(--c);background:linear-gradient(160deg,var(--b),#0f172a 75%);overflow:hidden;text-align:left;width:100%;display:block;transition:transform .15s}
+.card.t-elite{--c:#c084fc;--b:#581c87}.card.t-star{--c:#facc15;--b:#713f12}.card.t-basique{--c:#94a3b8;--b:#334155}
+.card .shine{position:absolute;inset:0;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.28) 50%,transparent 65%);transform:translateX(-120%);pointer-events:none}
+.sel{outline:2px solid var(--amber);outline-offset:2px;transform:translateY(-3px)}
+.flip{perspective:700px}
+.flip>.in{position:relative;transform-style:preserve-3d;transform:rotateY(180deg);transition:transform .55s cubic-bezier(.2,.8,.2,1)}
+.flip.up>.in{transform:rotateY(0)}
+.flip .face,.flip .back{backface-visibility:hidden}
+.flip .back{position:absolute;inset:0;transform:rotateY(180deg);border-radius:12px;background:repeating-linear-gradient(135deg,#1e293b 0 6px,#172033 6px 12px);border:1.5px solid #475569;display:grid;place-items:center}
+.flip.up.t-elite .shine{animation:sweep 1.1s .5s ease-out 1}
+.flip.up.t-elite .card{animation:eliteGlow 1.6s .3s ease-out 1 both}
+@keyframes sweep{to{transform:translateX(120%)}}
+@keyframes eliteGlow{0%{box-shadow:0 0 0 0 rgba(192,132,252,.9)}40%{box-shadow:0 0 38px 8px rgba(192,132,252,.7)}100%{box-shadow:0 0 18px 2px rgba(192,132,252,.45)}}
+.pack{position:relative;border-radius:14px;background:linear-gradient(150deg,#475569 0%,#1e293b 38%,#334155 52%,#0f172a 100%);border:1.5px solid #64748b;overflow:hidden}
+.pack:before{content:"";position:absolute;left:0;right:0;top:18%;height:14px;background:var(--amber);opacity:.9}
+.pack:after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.18) 50%,transparent 60%);animation:foil 3.2s ease-in-out infinite}
+@keyframes foil{0%,60%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+.pack.used{opacity:.55;filter:saturate(.3)}.pack.used:after{display:none}
+.mine{animation:ring 1.6s ease-in-out infinite}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.55)}50%{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
+.tear{animation:tear .6s ease-in forwards}
+@keyframes tear{0%{transform:scale(1) rotate(0)}30%{transform:scale(1.06) rotate(-2deg)}100%{transform:scale(1.5) rotate(3deg);opacity:0}}
+.flash{animation:flash .7s ease-out forwards}
+@keyframes flash{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+.shake{animation:shake .5s ease-in-out infinite}
+@keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-1.5deg)}75%{transform:rotate(1.5deg)}}
+.slidein{opacity:0;animation:slidein .45s ease-out forwards}
+@keyframes slidein{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+.pulse-r{animation:pr 1s ease-in-out infinite}@keyframes pr{50%{opacity:.5}}
+.live-dot{animation:pr 1.2s ease-in-out infinite}
+.sheet-scrim{background:linear-gradient(#020617cc,#020617f2)}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.flip>.in{transform:none!important}.slidein{opacity:1}}
+</style>
+</head>
+<body class="py-6 px-2">
+
+<h1 class="lbl !mt-0 text-base text-slate-200 font-semibold">Loterie du lundi - 5 écrans, 390 px</h1>
+
+<!-- 1. PROGRAMMEE -->
+<div class="lbl"><b>1. Programmée</b> - la semaine est finie, le tirage n'a pas encore eu lieu. Vue commissaire (Duyen).</div>
+<div class="frame">
+  <header class="flex items-center gap-3 px-4 h-14 border-b border-slate-800">
+    <button aria-label="Retour" class="text-slate-400 text-xl">&#8249;</button>
+    <div class="leading-tight"><div class="font-semibold">Loterie du lundi</div><div class="text-xs text-slate-400">Les Potes du Parquet - semaine 8</div></div>
+  </header>
+  <section class="px-4 pt-5 pb-4">
+    <div class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+      <p class="text-sm text-amber-200">Lundi 2 novembre, 10h00</p>
+      <p class="mt-1 text-[15px] text-slate-200 leading-snug">Chaque manager a des tickets selon son classement de la semaine. Plus tu en as, plus tu as de chances de piocher tôt. Le dernier du classement en a le plus.</p>
+    </div>
+    <h2 class="mt-6 mb-2 text-sm font-semibold text-slate-300">Chances de passer en premier</h2>
+    <ul id="odds" class="space-y-2"></ul>
+    <p class="mt-3 text-xs text-slate-500 leading-snug">33 tickets au total. Chaque pack contient 1 Élite, 2 Star et 2 Basique. Tu gardes un joueur et tu en relâches un si ton équipe est complète.</p>
+  </section>
+  <div class="sticky bottom-0 px-4 py-4 bg-gradient-to-t from-[#0b1220] via-[#0b1220] to-transparent">
+    <button class="w-full h-12 rounded-xl bg-amber-500 text-slate-950 font-bold active:scale-[.98] transition">Lancer le tirage</button>
+    <p class="mt-2 text-center text-xs text-slate-500">Bouton réservé au commissaire. À partir de midi, n'importe quel membre peut lancer.</p>
+  </div>
+</div>
+
+<!-- 2. EN DIRECT -->
+<div class="lbl"><b>2. En direct</b> - c'est ton tour : timer, ordre, packs, fil d'événements. <button id="replayOrder" class="underline text-slate-300 ml-1">Rejouer la révélation de l'ordre</button></div>
+<div class="frame">
+  <header class="flex items-center gap-3 px-4 h-14 border-b border-slate-800">
+    <button aria-label="Retour" class="text-slate-400 text-xl">&#8249;</button>
+    <div class="leading-tight flex-1"><div class="font-semibold">Loterie du lundi</div><div class="text-xs text-slate-400">Les Potes du Parquet - semaine 8</div></div>
+    <span class="flex items-center gap-1.5 text-xs font-semibold text-red-400"><i class="live-dot w-2 h-2 rounded-full bg-red-500"></i>En direct</span>
+  </header>
+
+  <section class="mx-4 mt-4 rounded-2xl bg-slate-900 border border-amber-500/40 p-4 flex items-center gap-4">
+    <div class="relative w-20 h-20 shrink-0">
+      <svg viewBox="0 0 80 80" class="w-20 h-20 -rotate-90"><circle cx="40" cy="40" r="35" fill="none" stroke="#1e293b" stroke-width="6"/><circle id="ring" cx="40" cy="40" r="35" fill="none" stroke="#F59E0B" stroke-width="6" stroke-linecap="round" stroke-dasharray="220" stroke-dashoffset="50"/></svg>
+      <div id="secs" class="num absolute inset-0 grid place-items-center text-3xl font-bold">47</div>
+    </div>
+    <div class="min-w-0">
+      <p class="text-xs text-slate-400">Pick 3 sur 6</p>
+      <p class="text-lg font-bold leading-tight">C'est ton tour, Duyen</p>
+      <p class="text-sm text-slate-400 leading-snug mt-0.5">Choisis un pack fermé. Sans réponse, le jeu choisit pour toi.</p>
+    </div>
+  </section>
+
+  <section class="px-4 mt-6">
+    <h2 class="text-sm font-semibold text-slate-300 mb-2">Ordre de passage</h2>
+    <ol id="order" class="rounded-2xl border border-slate-800 divide-y divide-slate-800 overflow-hidden"></ol>
+  </section>
+
+  <section class="px-4 mt-6">
+    <h2 class="text-sm font-semibold text-slate-300 mb-2">Packs <span class="text-slate-500 font-normal">- 4 fermés, 2 ouverts</span></h2>
+    <div id="packs" class="grid grid-cols-3 gap-3"></div>
+  </section>
+
+  <section class="px-4 mt-6 pb-6">
+    <h2 class="text-sm font-semibold text-slate-300 mb-2">Ce qui vient de se passer</h2>
+    <ul id="feed" class="space-y-2 text-sm"></ul>
+  </section>
+</div>
+
+<!-- 3. MODALE -->
+<div class="lbl"><b>3. Modale de pick</b> - le moment fort. Rejoue chaque étape :
+  <span class="inline-flex flex-wrap gap-1 ml-1">
+    <button data-st="closed" class="st px-2 py-0.5 rounded bg-slate-800 text-slate-200">Pack fermé</button>
+    <button data-st="opening" class="st px-2 py-0.5 rounded bg-slate-800 text-slate-200">Ouverture</button>
+    <button data-st="choice" class="st px-2 py-0.5 rounded bg-slate-800 text-slate-200">Choix</button>
+    <button data-st="auto" class="st px-2 py-0.5 rounded bg-slate-800 text-slate-200">Temps écoulé</button>
+  </span></div>
+<div class="frame" style="min-height:800px">
+  <div class="absolute inset-0 sheet-scrim"></div>
+  <div class="relative">
+    <div class="flex items-center justify-between px-4 h-14">
+      <div class="text-sm"><span class="text-slate-400">Pack 5</span> <span class="text-slate-600 mx-1">/</span> <span class="font-semibold">pick 3</span></div>
+      <span id="mSecs" class="num text-xl font-bold text-amber-400">38 s</span>
+    </div>
+    <div id="stage" class="px-4 pb-6"></div>
+  </div>
+</div>
+
+<!-- 4. TERMINEE -->
+<div class="lbl"><b>4. Terminée</b> - récap de la semaine 8.</div>
+<div class="frame">
+  <header class="flex items-center gap-3 px-4 h-14 border-b border-slate-800">
+    <button aria-label="Retour" class="text-slate-400 text-xl">&#8249;</button>
+    <div class="leading-tight flex-1"><div class="font-semibold">Loterie du lundi</div><div class="text-xs text-slate-400">Les Potes du Parquet - semaine 8</div></div>
+    <span class="text-xs font-semibold text-emerald-400">Terminée</span>
+  </header>
+  <section class="px-4 pt-5">
+    <p class="text-[15px] text-slate-300 leading-snug">Les six picks sont faits et les nouveaux joueurs sont déjà dans les équipes. Vérifie ton cinq de départ.</p>
+    <ul id="recap" class="mt-4 space-y-3"></ul>
+  </section>
+  <div class="px-4 py-5"><button class="w-full h-12 rounded-xl border border-amber-500/60 text-amber-400 font-semibold">Voir mon équipe</button></div>
+</div>
+
+<!-- 5. BANNIERES -->
+<div class="lbl"><b>5. Bannière /home</b> - compacte, 3 variantes (programmée, en direct, terminée). Tout le bandeau est un lien.</div>
+<div class="frame p-4 space-y-3" id="banners"></div>
+
+<div class="lbl"><b>États annexes</b> - chargement, erreur de pick, semaine sans match.</div>
+<div class="frame p-4 space-y-3">
+  <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 animate-pulse">
+    <div class="h-3 w-28 bg-slate-700 rounded"></div><div class="h-5 w-52 bg-slate-700 rounded mt-3"></div><div class="h-3 w-40 bg-slate-800 rounded mt-3"></div>
+  </div>
+  <div class="rounded-2xl border border-red-500/40 bg-red-500/10 p-4">
+    <p class="font-semibold text-red-300">Ce pick n'a pas pu être enregistré</p>
+    <p class="text-sm text-slate-300 mt-1 leading-snug">Un autre manager a ouvert ce pack en même temps. Choisis un des packs encore fermés.</p>
+    <button class="mt-3 h-10 px-4 rounded-lg bg-slate-800 text-slate-100 text-sm font-semibold">Revenir aux packs</button>
+  </div>
+  <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+    <p class="font-semibold">Pas de loterie cette semaine</p>
+    <p class="text-sm text-slate-400 mt-1 leading-snug">Aucun match de LNB Élite n'a été joué. La prochaine loterie aura lieu lundi 9 novembre.</p>
+  </div>
+</div>
+
+<script>
+const M=[
+ {n:'Maxime',t:10,p:30.3,r:'6e'},{n:'Sarah',t:8,p:24.2,r:'5e'},{n:'Tom',t:6,p:18.2,r:'4e'},
+ {n:'Duyen',t:5,p:15.2,r:'3e',me:1},{n:'Léa',t:3,p:9.1,r:'2e'},{n:'Karim',t:1,p:3.0,r:'1er'}];
+const ORDER=['Sarah','Maxime','Duyen','Tom','Karim','Léa'];
+const av=(n,me)=>`<span class="w-8 h-8 shrink-0 rounded-full grid place-items-center text-xs font-bold ${me?'bg-amber-500 text-slate-950':'bg-slate-700 text-slate-200'}">${n[0]}</span>`;
+const T={elite:{l:'Élite',c:'text-purple-400'},star:{l:'Star',c:'text-yellow-400'},basique:{l:'Basique',c:'text-slate-300'}};
+const $=s=>document.querySelector(s);
+const nice=a=>a.toFixed(1).replace('.',',');
+
+// 1
+$('#odds').innerHTML=M.map(m=>`<li class="rounded-xl border ${m.me?'border-amber-500/50 bg-amber-500/5':'border-slate-800 bg-slate-900/60'} p-3">
+ <div class="flex items-center gap-3">${av(m.n,m.me)}<div class="flex-1 min-w-0"><div class="font-medium leading-tight">${m.n}${m.me?' <span class="text-xs text-amber-400">(toi)</span>':''}</div><div class="text-xs text-slate-500">${m.r} du classement de la semaine</div></div>
+ <div class="text-right"><div class="num text-2xl font-bold leading-none ${m.me?'text-amber-400':''}">${nice(m.p)} %</div><div class="text-xs text-slate-400 mt-0.5">${m.t} ticket${m.t>1?'s':''}</div></div></div>
+ <div class="mt-2 h-1.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full rounded-full ${m.me?'bg-amber-500':'bg-slate-500'}" style="width:${m.p*3.2}%"></div></div></li>`).join('');
+
+// 2
+function drawOrder(){
+ $('#order').innerHTML=ORDER.map((n,i)=>{const m=M.find(x=>x.n===n);const cur=i===2;const done=i<2;
+  return `<li class="slidein flex items-center gap-3 px-3 py-2.5 ${cur?'bg-amber-500/10':'bg-slate-900/60'}" style="animation-delay:${i*450}ms">
+  <span class="num w-6 text-xl font-bold ${cur?'text-amber-400':'text-slate-500'}">${i+1}</span>${av(n,m.me)}
+  <span class="flex-1 font-medium ${done?'text-slate-500':''}">${n}${m.me?' <span class="text-xs text-amber-400">(toi)</span>':''}</span>
+  <span class="text-xs ${cur?'text-amber-400 font-semibold':'text-slate-500'}">${cur?'Son tour':done?'A pioché':'En attente'}</span></li>`}).join('');
+}
+drawOrder(); $('#replayOrder').onclick=drawOrder;
+
+const packs=[{n:1,by:'Sarah',p:'Kevin Pauly',t:'star'},{n:2,by:'Maxime',p:'Matthew Strazel',t:'elite'},{n:3},{n:4},{n:5},{n:6}];
+$('#packs').innerHTML=packs.map(k=>k.by?
+ `<div class="pack used aspect-[3/4] flex flex-col justify-end p-2"><div class="relative text-[11px] leading-tight"><div class="font-semibold text-slate-200">${k.by}</div><div class="${T[k.t].c}">${k.p}</div></div></div>`:
+ `<button aria-label="Ouvrir le pack ${k.n}" class="pack mine aspect-[3/4] flex items-end justify-center pb-3"><span class="num relative text-4xl font-extrabold text-slate-100">${k.n}</span></button>`).join('');
+
+const feed=[['Maxime a pris Matthew Strazel (Élite) et relâché Antoine Eito','2 min'],['Sarah a pris Kevin Pauly (Star) et relâché Louis Labeyrie','3 min'],['Ordre tiré. Sarah passe en premier.','4 min']];
+$('#feed').innerHTML=feed.map(f=>`<li class="flex gap-3 text-slate-300 leading-snug"><span class="text-xs text-slate-500 w-12 shrink-0 pt-0.5">${f[1]}</span><span>${f[0]}</span></li>`).join('');
+
+let s=47;const ring=$('#ring');
+function tick(){$('#secs').textContent=s;$('#mSecs').textContent=s+' s';ring.setAttribute('stroke-dashoffset',220*(1-s/60));
+ const low=s<10;ring.setAttribute('stroke',low?'#ef4444':'#F59E0B');$('#secs').className='num absolute inset-0 grid place-items-center text-3xl font-bold '+(low?'text-red-400 pulse-r':'');}
+tick();setInterval(()=>{s=s<=0?60:s-1;tick()},1000);
+
+// 3
+const CARDS=[
+ {id:1,n:'Hugo Besson',pos:'ARR',g:'Arrière',club:'Le Mans',avg:15.1,t:'basique'},
+ {id:2,n:'Louis Labeyrie',pos:'AIL',g:'Ailier',club:'Chalon',avg:13.7,t:'basique'},
+ {id:3,n:'Jérémy Nzeulie',pos:'AIL',g:'Ailier',club:'Dijon',avg:23.2,t:'star'},
+ {id:4,n:'Sylvain Francisco',pos:'ARR',g:'Arrière',club:'Strasbourg',avg:26.4,t:'star'},
+ {id:5,n:'Mam Jaiteh',pos:'INT',g:'Intérieur',club:'Paris Basketball',avg:33.8,t:'elite'}];
+const ROSTER=[
+ {n:'Andrew Albicy',g:'Arrière',club:'Gravelines',avg:18.4,t:'star'},{n:'Elie Okobo',g:'Arrière',club:'Monaco',avg:24.0,t:'star'},
+ {n:'Kyle Allman',g:'Arrière',club:'Limoges',avg:17.9,t:'basique'},
+ {n:'William Howard',g:'Ailier',club:'Monaco',avg:20.3,t:'star'},{n:'Axel Bouteille',g:'Ailier',club:'Limoges',avg:16.5,t:'basique'},
+ {n:'Moustapha Fall',g:'Intérieur',club:'Gravelines',avg:19.8,t:'star'},{n:'Neal Sako',g:'Intérieur',club:'Nanterre',avg:15.3,t:'basique'},
+ {n:'Johan Passave-Ducteil',g:'Intérieur',club:'Bourg-en-Bresse',avg:12.9,t:'basique'}];
+let sel=5,rel='Johan Passave-Ducteil';
+
+const cardHTML=(c,i,up)=>`<div class="flip ${up?'up':''} t-${c.t}" style="grid-column:span ${i<3?2:3}"><div class="in" style="transition-delay:${up?0:0}ms">
+ <button ${up?`data-c="${c.id}"`:'tabindex="-1"'} aria-label="${c.n}, ${T[c.t].l}, ${c.g}" class="card face t-${c.t} ${sel===c.id&&up?'sel':''}" style="${i>=3?'padding:12px':''}">
+  <span class="shine"></span>
+  <span class="flex items-start justify-between"><span><span class="num block ${i>=3?'text-5xl':'text-3xl'} font-extrabold leading-none text-white">${nice(c.avg)}</span><span class="block text-[10px] text-slate-300 mt-0.5">moy. fantasy</span></span>
+   <span class="num text-sm font-bold px-1.5 rounded bg-slate-950/50 ${T[c.t].c}">${c.pos}</span></span>
+  <span class="block mx-auto my-2 ${i>=3?'w-16 h-16 text-2xl':'w-11 h-11 text-lg'} rounded-full bg-slate-950/50 grid place-items-center num font-bold text-slate-200">${c.n.split(' ').map(w=>w[0]).slice(0,2).join('')}</span>
+  <span class="block font-semibold leading-tight ${i>=3?'text-[15px]':'text-[12px]'} text-white">${c.n}</span>
+  <span class="block text-[11px] text-slate-300">${c.club}</span>
+  <span class="block mt-1 text-[11px] font-semibold ${T[c.t].c}">${T[c.t].l}</span>
+ </button><div class="back"><span class="num text-slate-500 text-3xl font-bold">MPP</span></div></div></div>`;
+
+function st_closed(){return `<div class="text-center pt-6">
+ <p class="text-lg font-bold">Ton pack est prêt</p><p class="text-sm text-slate-400 mt-1">Touche-le pour l'ouvrir. 5 joueurs dedans, tu en gardes un.</p>
+ <button id="openPack" aria-label="Ouvrir le pack" class="pack shake mx-auto mt-8 grid place-items-center w-56 aspect-[3/4]"><span class="num relative font-extrabold text-slate-100" style="font-size:96px">5</span></button>
+ <p class="mt-8 text-xs text-slate-500">1 Élite, 2 Star, 2 Basique</p></div>`}
+function st_opening(){return `<div class="relative text-center h-[560px] overflow-hidden">
+ <div class="absolute inset-0 grid place-items-center"><div class="pack tear w-56 aspect-[3/4]"></div></div>
+ <div class="flash absolute -inset-10" style="background:radial-gradient(circle,#fff 0,#fcd34d 25%,transparent 65%)"></div></div>`}
+function st_cards(){return `<p class="text-sm text-slate-400 mb-3">Découvre tes cartes.</p><div id="cards" class="grid grid-cols-6 gap-2">${CARDS.map((c,i)=>cardHTML(c,i,false)).join('')}</div>`}
+function relHTML(){const g=CARDS.find(c=>c.id===sel).g;
+ return ROSTER.map(r=>{const ok=r.g===g;const on=rel===r.n;
+ return `<li><button ${ok?`data-r="${r.n}"`:'disabled'} class="w-full flex items-center gap-3 px-3 py-2 text-left ${on?'bg-red-500/15':''} ${ok?'':'opacity-35'}">
+ <span class="w-1.5 h-8 rounded-full ${r.t==='star'?'bg-yellow-400':'bg-slate-400'}"></span>
+ <span class="flex-1 min-w-0"><span class="block text-sm font-medium truncate">${r.n}</span><span class="block text-xs text-slate-400">${r.g} - ${r.club}</span></span>
+ <span class="num text-lg font-bold">${nice(r.avg)}</span>
+ <span class="w-5 h-5 rounded-full border ${on?'bg-red-500 border-red-500':'border-slate-600'} grid place-items-center text-[10px] text-white">${on?'&#10003;':''}</span></button></li>`}).join('')}
+function st_choice(){const c=CARDS.find(x=>x.id===sel);const last=n=>n.split(' ').slice(-1)[0];
+ return `<div id="cards" class="grid grid-cols-6 gap-2">${CARDS.map((c,i)=>cardHTML(c,i,true)).join('')}</div>
+ <h3 class="mt-5 text-sm font-semibold">Qui part pour faire de la place ?</h3>
+ <p class="text-xs text-slate-400 mb-2 leading-snug">Ton équipe est complète (8 joueurs). Tu peux relâcher un ${c.g.toLowerCase()} pour garder 3 arrières, 2 ailiers et 3 intérieurs. Il redevient libre.</p>
+ <ul id="rel" class="rounded-xl border border-slate-800 divide-y divide-slate-800 bg-slate-900/70 overflow-hidden">${relHTML()}</ul>
+ <button id="ok" class="mt-4 w-full h-12 rounded-xl font-bold ${rel?'bg-amber-500 text-slate-950':'bg-slate-800 text-slate-500'}" ${rel?'':'disabled'}>${rel?`Garder ${last(c.n)}, relâcher ${last(rel)}`:'Choisis qui relâcher'}</button>`}
+function st_auto(){return `<div class="rounded-2xl border border-slate-700 bg-slate-900 p-5 mt-4 text-center">
+ <p class="num text-5xl font-bold text-red-400">0 s</p><p class="font-semibold mt-2">Temps écoulé</p>
+ <p class="text-sm text-slate-400 mt-1 leading-snug">Le jeu a choisi à ta place : Mam Jaiteh (Élite, intérieur). Johan Passave-Ducteil, ton intérieur le plus faible, est relâché.</p>
+ <button class="mt-4 h-11 px-5 rounded-xl bg-slate-800 font-semibold text-sm">Fermer</button></div>`}
+
+function bind(){
+ const o=$('#openPack'); if(o)o.onclick=()=>go('opening');
+ document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel=+b.dataset.c;const g=CARDS.find(c=>c.id===sel).g;const r=ROSTER.find(x=>x.n===rel);if(!r||r.g!==g)rel=null;go('choice')});
+ document.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{rel=b.dataset.r;go('choice')});
+ const ok=$('#ok'); if(ok)ok.onclick=()=>{ok.textContent='Pick confirmé';ok.className='mt-4 w-full h-12 rounded-xl font-bold bg-emerald-500 text-slate-950'};
+}
+let timers=[];
+function go(stage){
+ timers.forEach(clearTimeout);timers=[];
+ $('#stage').innerHTML={closed:st_closed,opening:st_opening,choice:st_choice,auto:st_auto,cards:st_cards}[stage]();
+ if(stage==='opening')timers.push(setTimeout(()=>go('cards'),800));
+ if(stage==='cards'){
+  document.querySelectorAll('#cards .flip').forEach((f,i)=>timers.push(setTimeout(()=>f.classList.add('up'),300+i*(i===4?900:450))));
+  timers.push(setTimeout(()=>go('choice'),300+4*450+900+1800));}
+ bind();
+}
+document.querySelectorAll('.st').forEach(b=>b.onclick=()=>go(b.dataset.st));
+go('choice');
+
+// 4
+const recap=[['Sarah','Kevin Pauly','star','Louis Labeyrie'],['Maxime','Matthew Strazel','elite','Antoine Eito'],['Duyen','Mam Jaiteh','elite','Johan Passave-Ducteil'],['Tom','Brandon Davies','star','Neal Sako'],['Karim','Nando De Colo','elite','Rodrigue Beaubois'],['Léa','Axel Julien','basique',null]];
+$('#recap').innerHTML=recap.map((r,i)=>`<li class="rounded-xl border ${r[0]==='Duyen'?'border-amber-500/50 bg-amber-500/5':'border-slate-800 bg-slate-900/60'} p-3 flex items-center gap-3">
+ <span class="num w-5 text-lg font-bold text-slate-500">${i+1}</span>${av(r[0],r[0]==='Duyen')}
+ <div class="flex-1 min-w-0"><div class="text-sm"><span class="font-semibold">${r[0]}</span> a pris <span class="font-semibold ${T[r[2]].c}">${r[1]}</span></div>
+ <div class="text-xs text-slate-400">${r[3]?`Relâché : ${r[3]}`:'Équipe incomplète, personne relâché'}</div></div></li>`).join('');
+
+// 5
+$('#banners').innerHTML=`
+<a href="#" class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
+ <span class="w-10 h-10 rounded-lg bg-amber-500/15 text-amber-400 grid place-items-center num text-sm font-bold">LUN</span>
+ <span class="flex-1 min-w-0 leading-tight"><span class="block font-semibold">Loterie lundi à 10h</span><span class="block text-xs text-slate-400">Tu as 5 tickets sur 33</span></span><span class="text-slate-500 text-xl">&#8250;</span></a>
+<a href="#" class="flex items-center gap-3 rounded-2xl border border-amber-500/60 bg-gradient-to-r from-amber-500/20 to-slate-900 px-4 py-3">
+ <span class="w-10 h-10 rounded-lg bg-amber-500 text-slate-950 grid place-items-center num text-xl font-bold">47</span>
+ <span class="flex-1 min-w-0 leading-tight"><span class="flex items-center gap-1.5 font-semibold"><i class="live-dot w-2 h-2 rounded-full bg-red-500"></i>Loterie en direct</span><span class="block text-xs text-amber-200">C'est ton tour, ouvre un pack</span></span><span class="text-amber-400 text-xl">&#8250;</span></a>
+<a href="#" class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
+ <span class="w-10 h-10 rounded-lg bg-purple-500/15 text-purple-400 grid place-items-center num text-sm font-bold">INT</span>
+ <span class="flex-1 min-w-0 leading-tight"><span class="block font-semibold">Loterie terminée</span><span class="block text-xs text-slate-400">Tu as pris Mam Jaiteh</span></span><span class="text-slate-500 text-xl">&#8250;</span></a>`;
+</script>
+</body>
+</html>

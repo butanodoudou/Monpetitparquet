@@ -4,8 +4,10 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { getSupabase } from '@/lib/supabase';
+import { apiFetch, ApiError } from '@/lib/api-client';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
+import LotteryBanner from '@/components/lottery/LotteryBanner';
 
 interface Member {
   user_id: string; username: string; team_name: string; avatar_color: string;
@@ -39,18 +41,22 @@ export default function LeagueDetailPage() {
   const [starting, setStarting] = useState(false);
   const [generatingSchedule, setGeneratingSchedule] = useState(false);
   const [addingBot, setAddingBot] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState('');
 
   const load = useCallback(async () => {
     if (!token) return;
-    const r = await fetch(`/api/leagues/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) { router.replace('/leagues'); return; }
-    const leagueData: League = await r.json();
+    let leagueData: League;
+    try {
+      leagueData = await apiFetch<League>(`/api/leagues/${id}`);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) router.replace('/leagues');
+      return;
+    }
     setLeague(leagueData);
 
     if (leagueData.draft_status === 'completed') {
       setTab('duels');
-      const wr = await fetch(`/api/leagues/${id}/week`, { headers: { Authorization: `Bearer ${token}` } });
-      if (wr.ok) setWeekData(await wr.json());
+      try { setWeekData(await apiFetch(`/api/leagues/${id}/week`)); } catch { /* semaine indisponible : on garde l'écran sans duels */ }
     }
     setLoading(false);
   }, [token, id, router]);
@@ -69,26 +75,57 @@ export default function LeagueDetailPage() {
   const startDraft = async () => {
     if (!confirm('Démarrer la draft ?')) return;
     setStarting(true);
-    const r = await fetch(`/api/leagues/${id}/start-draft`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-    if (r.ok) router.push(`/leagues/${id}/draft`);
-    else { const d = await r.json(); alert(d.error); setStarting(false); }
+    try {
+      await apiFetch(`/api/leagues/${id}/start-draft`, { method: 'POST' });
+      router.push(`/leagues/${id}/draft`);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) alert(e instanceof Error ? e.message : 'Erreur');
+      setStarting(false);
+    }
+  };
+
+  // Invitation : feuille de partage native, sinon copie dans le presse-papier
+  const invite = async () => {
+    if (!league) return;
+    const url = `${window.location.origin}/leagues?join=${league.invite_code}`;
+    const text = `Rejoins ma ligue « ${league.name} » sur Mon Petit Parquet ! Code : ${league.invite_code}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Mon Petit Parquet', text, url });
+        return;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return; // partage annulé
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setInviteMsg('Lien copié dans le presse-papier');
+    } catch {
+      window.prompt('Copie ce lien pour inviter tes amis', url);
+      return;
+    }
+    setTimeout(() => setInviteMsg(''), 2500);
   };
 
   const addBot = async () => {
     setAddingBot(true);
-    const r = await fetch(`/api/leagues/${id}/add-bot`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-    if (r.ok) await load();
-    else { const d = await r.json(); alert(d.error); }
+    try {
+      await apiFetch(`/api/leagues/${id}/add-bot`, { method: 'POST' });
+      await load();
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) alert(e instanceof Error ? e.message : 'Erreur');
+    }
     setAddingBot(false);
   };
 
   const generateSchedule = async () => {
     setGeneratingSchedule(true);
-    const r = await fetch(`/api/leagues/${id}/generate-schedule`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-    if (r.ok) {
-      const wr = await fetch(`/api/leagues/${id}/week`, { headers: { Authorization: `Bearer ${token}` } });
-      if (wr.ok) setWeekData(await wr.json());
-    } else { const d = await r.json(); alert(d.error); }
+    try {
+      await apiFetch(`/api/leagues/${id}/generate-schedule`, { method: 'POST' });
+      try { setWeekData(await apiFetch(`/api/leagues/${id}/week`)); } catch { /* semaine indisponible */ }
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) alert(e instanceof Error ? e.message : 'Erreur');
+    }
     setGeneratingSchedule(false);
   };
 
@@ -125,6 +162,12 @@ export default function LeagueDetailPage() {
               </div>
             </div>
 
+            <div className="mb-4">
+              <button type="button" onClick={invite} className="btn-secondary py-2 text-sm w-full">
+                {inviteMsg || '📨 Inviter des amis'}
+              </button>
+            </div>
+
             {league.draft_status === 'pending' && (
               <div className="bg-slate-700/50 rounded-xl p-3">
                 {isCommissioner ? (
@@ -151,7 +194,11 @@ export default function LeagueDetailPage() {
               <Link href={`/leagues/${id}/draft`} className="btn-primary py-2 text-sm text-center block">🏀 Rejoindre la draft en cours</Link>
             )}
             {draftDone && (
-              <Link href={`/leagues/${id}/team`} className="btn-secondary py-2 text-sm text-center block">Mon équipe →</Link>
+              <div className="space-y-2">
+                <LotteryBanner leagueId={id} userId={user?.id} />
+                <Link href={`/leagues/${id}/team`} className="btn-secondary py-2 text-sm text-center block">Mon équipe →</Link>
+                <Link href={`/leagues/${id}/lottery`} className="btn-secondary py-2 text-sm text-center block">Loterie du lundi →</Link>
+              </div>
             )}
           </div>
         </div>
@@ -364,12 +411,12 @@ export default function LeagueDetailPage() {
                 <button
                   onClick={async () => {
                     if (!confirm('Supprimer définitivement cette ligue et toutes ses données ?')) return;
-                    const r = await fetch(`/api/leagues/${id}`, {
-                      method: 'DELETE',
-                      headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (r.ok) router.replace('/leagues');
-                    else { const d = await r.json(); alert(d.error); }
+                    try {
+                      await apiFetch(`/api/leagues/${id}`, { method: 'DELETE' });
+                      router.replace('/leagues');
+                    } catch (e) {
+                      if (!(e instanceof ApiError && e.status === 401)) alert(e instanceof Error ? e.message : 'Erreur');
+                    }
                   }}
                   className="w-full py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-semibold"
                 >

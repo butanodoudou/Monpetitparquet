@@ -109,6 +109,70 @@ export async function fetchEventsByRound(round: number): Promise<SofaEvent[]> {
   return data.events.filter(e => e.status.type === 'finished');
 }
 
+// Ligne `matches` d'un match à venir (sans score : les colonnes de score ne sont pas écrasées à l'upsert)
+export interface UpcomingMatchRow {
+  id: number;
+  home_team: string;
+  home_team_id: number;
+  away_team: string;
+  away_team_id: number;
+  match_date: string;
+  week: number;
+  status: 'scheduled' | 'live' | 'postponed' | 'cancelled';
+  season: string;
+}
+
+// Statut Sofascore (`status.type`) → statut stocké en base. `finished` n'est jamais produit ici
+// (un match terminé n'est écrit que par le flux des résultats). Inconnu : null → match ignoré.
+function mapUpcomingStatus(type: string | undefined): UpcomingMatchRow['status'] | null {
+  switch ((type ?? '').toLowerCase()) {
+    case 'notstarted':
+    case 'delayed':
+      return 'scheduled';
+    case 'inprogress':
+    case 'interrupted':
+      return 'live';
+    case 'postponed':
+      return 'postponed';
+    case 'canceled':
+    case 'cancelled':
+    case 'abandoned':
+      return 'cancelled';
+    default:
+      return null;
+  }
+}
+
+/** Normalise un event Sofascore à venir vers le format de la table `matches`. */
+export function normalizeUpcomingEvent(e: SofaEvent): UpcomingMatchRow | null {
+  const status = mapUpcomingStatus(e.status?.type);
+  if (!status || !e.homeTeam || !e.awayTeam || !e.startTimestamp) return null;
+  return {
+    id: e.id,
+    home_team: e.homeTeam.name,
+    home_team_id: e.homeTeam.id,
+    away_team: e.awayTeam.name,
+    away_team_id: e.awayTeam.id,
+    match_date: new Date(e.startTimestamp * 1000).toISOString(),
+    week: e.roundInfo?.round ?? 0,
+    status,
+    season: CURRENT_SEASON,
+  };
+}
+
+/** Prochains matchs de la saison en cours : UN SEUL appel (page 0, pas de pagination) pour économiser le quota ScraperAPI. */
+export async function fetchUpcomingMatches(): Promise<UpcomingMatchRow[]> {
+  const data = await sfFetch<{ events?: SofaEvent[] }>(
+    `/unique-tournament/${TOURNAMENT_ID}/season/${SEASON_ID}/events/next/0`
+  );
+  const rows: UpcomingMatchRow[] = [];
+  for (const e of data.events ?? []) {
+    const row = normalizeUpcomingEvent(e);
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
 export async function fetchEventLineups(
   eventId: number,
   homeTeamId: number,
@@ -128,12 +192,14 @@ export async function fetchEventLineups(
 // Sofascore positions: G, GF, F, FC, C
 export function normalizePosition(pos: string | null | undefined): string {
   if (!pos) return 'F';
-  switch (pos.toUpperCase()) {
-    case 'G':  return 'PG';
-    case 'GF': return 'SG';
-    case 'F':  return 'SF';
-    case 'FC': return 'PF';
+  // Postes composés ("G-F", "F/C", "G, F"…) : on retient le premier poste cité
+  const first = pos.toUpperCase().split(/[\s\-\/,]+/).filter(Boolean)[0] ?? '';
+  switch (first) {
+    case 'G':  case 'PG': return 'PG';
+    case 'GF': case 'SG': return 'SG';
+    case 'F':  case 'SF': return 'SF';
+    case 'FC': case 'PF': return 'PF';
     case 'C':  return 'C';
-    default:   return pos.slice(0, 2).toUpperCase();
+    default:   return 'F'; // inconnu : ailier par défaut (comme pour un poste absent)
   }
 }

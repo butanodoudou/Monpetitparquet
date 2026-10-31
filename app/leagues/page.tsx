@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import TopBar from '@/components/TopBar';
+import { apiFetch } from '@/lib/api-client';
 import BottomNav from '@/components/BottomNav';
 
 interface League { id: string; name: string; invite_code: string; draft_status: string; member_count: number; team_name: string; }
@@ -18,15 +19,34 @@ export default function LeaguesPage() {
   const [form, setForm] = useState({ name: '', teamName: '', inviteCode: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  useEffect(() => { if (!token) router.replace('/auth'); }, [token]);
+  // Sans session, on passe par /auth en gardant l'URL (et donc un éventuel ?join=CODE)
+  useEffect(() => {
+    if (!token) router.replace(`/auth?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  }, [token]);
 
   const load = async () => {
-    const r = await fetch('/api/leagues', { headers: { Authorization: `Bearer ${token}` } });
-    setLeagues(await r.json());
-    setLoading(false);
+    try {
+      const data = await apiFetch<League[]>('/api/leagues');
+      setLeagues(Array.isArray(data) ? data : []);
+      setLoadError('');
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Erreur inattendue');
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { if (token) load(); }, [token]);
+
+  // Lien d'invitation /leagues?join=CODE : ouvre « Rejoindre » avec le code pré-rempli
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('join');
+    if (!code || !token) return;
+    setModal('join');
+    setForm({ name: '', teamName: '', inviteCode: code.toUpperCase().slice(0, 8) });
+    window.history.replaceState(null, '', '/leagues');
+  }, [token]);
 
   const openModal = (m: Modal) => { setModal(m); setForm({ name: '', teamName: '', inviteCode: '' }); setError(''); };
 
@@ -36,13 +56,11 @@ export default function LeaguesPage() {
     const url = isCreate ? '/api/leagues' : '/api/leagues/join';
     const body = isCreate ? { name: form.name, teamName: form.teamName } : { inviteCode: form.inviteCode, teamName: form.teamName };
     try {
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-      const data = await r.json();
-      if (!r.ok) { setError(data.error); return; }
+      const data = await apiFetch(url, { method: 'POST', body: JSON.stringify(body) });
       await load();
       setModal(null);
-      if (!isCreate) router.push(`/leagues/${data.leagueId}`);
-    } catch { setError('Erreur réseau'); }
+      if (!isCreate && data?.leagueId) router.push(`/leagues/${data.leagueId}`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Erreur réseau'); }
     finally { setBusy(false); }
   };
 
@@ -64,6 +82,11 @@ export default function LeaguesPage() {
         <div className="px-4 mt-6">
           {loading ? (
             <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="card h-28 animate-pulse bg-slate-800/50" />)}</div>
+          ) : loadError ? (
+            <div className="text-center py-12">
+              <p className="text-red-400 text-sm mb-3">{loadError}</p>
+              <button className="btn-secondary max-w-xs" onClick={() => { setLoading(true); load(); }}>Réessayer</button>
+            </div>
           ) : leagues.length === 0 ? (
             <div className="text-center py-16 text-slate-500"><div className="text-5xl mb-4">🏆</div><p>Aucune ligue pour l'instant</p></div>
           ) : (

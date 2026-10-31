@@ -1,3 +1,4 @@
+-- NE PAS REJOUER EN COURS DE SAISON : CE SCRIPT REMET LES MOYENNES JOUEURS À 0.
 -- ---------------------------------------------------------------------------
 -- Bascule saison 2026-2027 (LNB Élite, seasonId Sofascore 102568)
 -- À exécuter dans le SQL Editor Supabase, puis lancer les syncs (voir plus bas).

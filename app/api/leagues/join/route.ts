@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { DRAFT_BUDGET } from '@/lib/fantasy';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await supabase
     .from('league_members')
-    .insert({ league_id: league.id, user_id: auth.userId, team_name: teamName.trim() });
+    .insert({ league_id: league.id, user_id: auth.userId, team_name: teamName.trim(), draft_credits: DRAFT_BUDGET });
 
   if (error?.code === '23505') {
     return NextResponse.json({ error: 'Vous êtes déjà dans cette ligue' }, { status: 409 });

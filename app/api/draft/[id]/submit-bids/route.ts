@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import { DRAFT_BUDGET, TIER_MIN_BIDS, assignAuctionTier, computeAuctionTierThresholds } from '@/lib/fantasy';
+import {
+  DRAFT_BUDGET, TIER_MIN_BIDS, ROSTER_SIZE, GROUP_LABELS,
+  assignAuctionTier, computeAuctionTierThresholds, getPositionGroup, getRemainingRosterSlots,
+} from '@/lib/fantasy';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -10,7 +13,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const supabase = db();
   const leagueId = params.id;
 
-  const { bids } = (await req.json()) as { bids: Record<string, number> };
+  let bids: Record<string, number> | undefined;
+  try {
+    bids = (await req.json())?.bids;
+  } catch {
+    return NextResponse.json({ error: 'Données invalides' }, { status: 400 });
+  }
   if (!bids || typeof bids !== 'object') {
     return NextResponse.json({ error: 'Données invalides' }, { status: 400 });
   }
@@ -38,12 +46,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const credits = member.draft_credits ?? DRAFT_BUDGET;
 
   // Get tier info for each player to validate minimums
-  const { data: allPlayersData } = await supabase.from('players').select('id, season_avg_fantasy').in('id', packPlayerIds);
+  // Seuils calculés sur tout le pool (comme execute-close-pack et auction-state), pas sur les 5 joueurs du pack
+  const [{ data: allPlayersData }, { data: packPlayers }, { data: myTeam }] = await Promise.all([
+    supabase.from('players').select('id, season_avg_fantasy').eq('is_active', true),
+    supabase.from('players').select('id, name, position').in('id', packPlayerIds),
+    supabase.from('team_players').select('player:players(position)').eq('league_id', leagueId).eq('user_id', auth.userId),
+  ]);
   const { p5, p25 } = computeAuctionTierThresholds((allPlayersData ?? []).map(p => p.season_avg_fantasy));
   const tierMap: Record<number, 'elite' | 'star' | 'basique'> = {};
   for (const p of allPlayersData ?? []) {
     tierMap[p.id] = assignAuctionTier(p.season_avg_fantasy, p5, p25);
   }
+
+  // Places restantes par poste : on refuse toute mise sur un poste déjà plein
+  const myRoster = (myTeam ?? []).map((tp: any) => ({ position: tp.player?.position ?? '' }));
+  const remaining = getRemainingRosterSlots(myRoster);
+  const rosterFull = myRoster.length >= ROSTER_SIZE;
 
   let totalBid = 0;
   for (const playerId of packPlayerIds) {
@@ -56,6 +74,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Bid must be 0 (skip) or >= tier minimum
     if (amount > 0 && amount < tierMin) {
       return NextResponse.json({ error: `Mise minimum ${tierMin.toLocaleString()}$ pour un ${tier}` }, { status: 400 });
+    }
+    if (amount > 0) {
+      const pp = (packPlayers ?? []).find(p => p.id === playerId);
+      const group = getPositionGroup(pp?.position ?? '');
+      if (rosterFull) {
+        return NextResponse.json({ error: 'Ton roster est complet, tu ne peux plus miser' }, { status: 400 });
+      }
+      if (group && remaining[group] <= 0) {
+        return NextResponse.json({
+          error: `Poste complet : tu as déjà tous tes ${GROUP_LABELS[group].toLowerCase()}${pp ? ` (${pp.name})` : ''}. Mets cette mise à 0.`,
+        }, { status: 400 });
+      }
     }
     totalBid += amount;
   }

@@ -251,3 +251,152 @@ Points clés :
 
 **Fichiers** : `lib/fantasy.ts`, `lib/sports-api.ts` (mapping étendu), `app/api/sync/results/route.ts`, `supabase/schema.sql`, `supabase/migrations/2026-10-08_saison-2026-2027.sql`
 
+
+---
+
+## Mode de décision du projet (2026-10-15)
+
+**Contexte** : Objectif beta mi-janvier 2027. Les décisions de game design restaient ouvertes pendant des semaines et bloquaient l'avancement. L'utilisateur a proposé de créer un agent chargé de trancher.
+
+**Décision** : Pas d'agent décideur. Claude, en tant que chef d'orchestre, tranche par défaut, consigne chaque décision ici avec la mention **[veto possible]**, et code la décision. L'utilisateur garde un droit de veto à tout moment.
+- Décisions techniques : Claude tranche sans demander.
+- Game design : Claude tranche par défaut, l'utilisateur peut opposer son veto.
+- Ce que seul l'utilisateur sait ou peut faire (accès Supabase, testeurs, temps disponible) : on demande.
+
+**Alternatives écartées** :
+- Un agent « décideur » séparé : il repartirait de zéro sans contexte, et décider à la place de l'utilisateur revient au même que si Claude le fait, avec moins d'information.
+- Attendre une validation explicite à chaque fois : c'est ce qui bloquait.
+
+**Raison** : Garder le rythme jusqu'à la beta sans retirer la main à l'utilisateur.
+
+---
+
+## [veto possible] Recalibrage de la chimie (2026-10-15)
+
+**Contexte** : Le nouveau barème a fait baisser les scores d'environ 30 %. Comme la chimie est un bonus additif en points, son poids relatif est passé de ~6.9 % à ~9.6 % du score d'un cinq majeur.
+
+**Décision** : Paire même club +2 (au lieu de +3), paire même nationalité +1 (au lieu de +1.5), plafond à +8 (au lieu de +12). La chimie retrouve son poids d'avant.
+
+**Alternatives écartées** : Garder les anciennes valeurs, ce qui pousse encore plus vers les rosters d'un seul club et les cinq 100 % français, très courants en LNB.
+
+**Raison** : Le dosage avait été pensé en mai. On le restaure plutôt que de le changer sans l'avoir décidé.
+
+---
+
+## [veto possible] Contenu des packs de la loterie (2026-10-15)
+
+**Décision** : Pour la beta, les packs contiennent uniquement des **free agents**, c'est-à-dire des joueurs non draftés de la ligue. Les cartes *In Form* sont reportées après la beta.
+
+**Alternatives écartées** : Des cartes *In Form* (une version boostée d'un joueur qui appartient déjà à quelqu'un) dès la beta. Il faudrait gérer le doublon de propriété, l'affichage de deux versions d'un même joueur et l'équilibrage des boosts : trop pour le délai.
+
+**Raison** : Réduire le périmètre pour tenir janvier. Les free agents suffisent à créer le rituel du lundi et à faire vivre le roster.
+
+---
+
+## [veto possible] Semaines sans championnat LNB (2026-10-15)
+
+**Décision** : Le calendrier des duels saute les semaines sans journée LNB (en 26/27 : 28 déc.-3 janv., 15-21 fév., 22-28 fév.). Ces semaines-là, pas de duel et pas de loterie.
+
+**Alternatives écartées** : Une loterie ou un mercato spécial pendant la coupure de février. Bonne idée, mais pour après la beta.
+
+**Raison** : Un duel à 0-0 tue l'engagement. Le plus simple qui marche.
+
+---
+
+## Outillage : quels skills et agents externes on adopte (2026-10-15)
+
+**Contexte** : Une veille a repéré 13 dépôts GitHub de skills et d'agents Claude Code. L'utilisateur m'a délégué le choix.
+
+**Décision** : Installation minimale, uniquement depuis des sources officielles, et relue avant l'installation. On copie les fichiers dans `.claude/skills/` ; on n'installe pas de plugin entier.
+- Retenus : `supabase-postgres-best-practices` (supabase/agent-skills) et `frontend-design` (anthropics/skills). Ce sont du texte et des références SQL, sans script ni hook.
+- Méthode reprise de obra/superpowers sans l'installer : le chef d'orchestre délègue avec un brief écrit et exige une preuve (tsc, build) avant de considérer une tâche terminée.
+
+**Alternatives écartées** :
+- Le skill `supabase` général : il est centré sur Supabase Auth et le MCP Supabase, qu'on n'utilise pas (on a une auth JWT maison), et il imposerait de lire le changelog avant chaque tâche.
+- `vercel-labs/web-design-guidelines` : il télécharge ses règles à chaque exécution, donc le contenu peut changer sans qu'on le relise. Option à reconsidérer au S4 en figeant les règles localement.
+- Les marketplaces entières (wshobson/agents, ECC, superpowers en plugin) : surface d'audit trop grande, hooks exécutés à chaque session, contexte qui gonfle.
+
+**Raison** : Gain maximal pour un risque quasi nul. On ajoutera d'autres skills quand un sprint en aura besoin, pas avant.
+
+---
+
+## [veto possible] Loterie du lundi : règles de la v0 (2026-10-30)
+
+**Contexte** : la loterie est la pièce maîtresse de la beta et elle n'existe pas encore. Spec complète : `.claude/specs/loterie.md`.
+
+**Décision** :
+- 1 pack par manager et par semaine, 5 free agents (1 elite / 2 star / 2 basique), on en garde 1.
+- Ordre de pick par tirage pondéré sur les tickets (dernier = 10, premier = 1, interpolation linéaire). Chacun choisit à son tour un pack **fermé** parmi ceux qui restent, puis l'ouvre : c'est le moment FUT.
+- Roster plein (8) : relâche obligatoire, en respectant les postes (3/2/3). Le joueur relâché redevient free agent.
+- Cron le lundi à 8h UTC qui prépare la session ; le direct démarre quand le commissaire clique, ou à partir de 12h UTC au premier visiteur.
+- Timer de 60 s par pick, puis auto-pick (meilleure moyenne compatible, relâche du plus faible du poste). Comme pour le draft, n'importe quel client peut déclencher, le serveur déduplique.
+
+**Alternatives écartées** : un pack attribué d'office à chaque manager (moins de suspense) ; plusieurs joueurs gardés par pack (trop d'entrées dans les rosters chaque semaine) ; un plafond de transactions à la ESPN (inutile, la loterie limite déjà à 1 joueur par semaine).
+
+**Raison** : le plus petit rituel hebdomadaire qui fasse vivre les rosters, avec du suspense, et codable en moins d'une semaine.
+
+---
+
+## [veto possible] Périmètre de la v0 : on coupe le marché des transferts (2026-10-30)
+
+**Décision** :
+- Le S3 « marché/transferts » est **coupé** de la beta. La loterie est le seul moyen de faire entrer un joueur dans son roster, ce qui fait un seul circuit de propriété et moins de bugs.
+- Le S4 « onboarding » est réduit à : un lien d'invitation partageable en un tap (partage natif mobile, accessible à tout membre) et une page « Règles » d'un écran (barème, cinq de départ, chimie, loterie).
+- Gardés pour après la beta : capitaine ×2 (vu chez BeBasket), timer de draft configurable, échanges entre managers, cartes In Form, notifications push.
+
+**Alternatives écartées** : tenir le planning S3 et S4 complet. On risquait d'arriver en janvier avec deux fonctionnalités à moitié finies plutôt qu'une boucle de jeu solide.
+
+**Raison** : on coupe du périmètre plutôt que de décaler la date.
+
+**Veille** : BeBasket a lancé un fantasy Betclic Élite le 26/09/2026 (un cinq par soir, capitaine ×2, plus de 200 managers en 2 jours). C'est un jeu solo au classement général. Notre différence : des **ligues privées entre amis**, un draft, des duels, et la loterie. On garde ce cap.
+
+---
+
+## [veto possible] Composition, verrouillage et résultats des duels (2026-10-30)
+
+**Contexte** : l'audit QA a montré que la composition était enregistrée sous la journée déjà jouée (le choix du manager n'avait jamais d'effet), que la journée courante mélangeait les saisons, et qu'aucun vainqueur de duel n'était jamais calculé (classement = total de points).
+
+**Décision** :
+- La composition vaut pour la **prochaine journée à jouer** de la saison en cours. Elle est **verrouillée** au coup d'envoi du premier match de cette journée.
+- Sans nouvelle compo, on reprend la dernière enregistrée du manager. Seulement à défaut, on prend les meilleures moyennes.
+- Les vainqueurs sont **persistés** (`settleFinishedWeeks`) à la fin de `sync/results`, et en paresseux à la lecture d'une semaine. Le calcul du score de duel n'existe qu'à un endroit.
+- Classement : victoires, puis points pour.
+- Draft : un manager ne peut pas gagner un joueur à un poste déjà plein ; le joueur passe au meilleur enchérisseur éligible suivant.
+
+**Alternatives écartées** : verrouillage joueur par joueur au début de son match (plus fin, mais complexe et peu utile, la LNB jouant surtout le samedi) ; calcul des V-D à la volée à chaque affichage (coûteux et non figé).
+
+**Raison** : sans ça, le cœur du jeu (choisir son cinq, gagner des duels) ne fonctionne pas.
+
+---
+
+## Synchro des matchs à venir et journées incomplètes (2026-10-30)
+
+**Contexte** : seuls les matchs `finished` étaient synchronisés. « Prochains matchs » restait vide, le verrou de compo ne pouvait pas s'activer et la clôture d'une journée reposait sur un délai arbitraire.
+
+**Décision** :
+- `sync/results` fait **un appel de plus** à `events/next/0` (pas de pagination) et upserte les statuts `scheduled`, `live`, `postponed` et `cancelled`. Un match `finished` n'est jamais réécrit. Coût : environ 30 requêtes ScraperAPI de plus par mois.
+- Une journée est clôturée quand tous ses matchs sont terminés ou annulés. Repli : 36 h après le dernier match, si aucune journée ultérieure n'est connue.
+- Un match **reporté ou annulé** ne retient pas la « journée à jouer » et n'entre pas dans le calcul du verrou. Un match reporté bloque en revanche la clôture de sa journée jusqu'à ce qu'il soit joué.
+
+**Alternatives écartées** : la pagination de `next/N` ou un appel par journée (quota ScraperAPI) ; une contrainte CHECK sur `matches.status` (colonne TEXT libre, inutile pour la v0).
+
+**Raison** : rendre le verrou de compo et le calendrier effectifs pour un coût quasi nul.
+
+**Risque connu** : le format de `events/next/0` est supposé identique à celui de `events/last/0`. À vérifier lors du premier passage du cron.
+
+---
+
+## [veto possible] Derniers arbitrages de la v0 (2026-10-30)
+
+**Décision** :
+- **Saison sur les duels** : nouvelle colonne `weekly_matchups.season`. Les duels 2025-26 sont figés tels quels (réglés, sans recalcul). Le V-N-D et la clôture ne portent que sur la saison en cours.
+- **Match reporté** : il bloque la clôture de sa journée 36 h au plus. Passé ce délai, la journée est réglée sans lui, et les points du match rejoué ne comptent pour aucun duel.
+- **Loterie sans relance serveur** : si personne n'a la page ouverte, un tour expiré attend le prochain visiteur. C'est accepté pour la v0, où la loterie est un moment vécu ensemble. Le cron ne tourne qu'une fois par jour, donc il ne peut pas servir d'horloge.
+- **`lottery_packs` hors Realtime** : volontaire, pour ne jamais exposer un pack fermé en anon. Les autres clients voient une ouverture de pack au refetch suivant (10 s au plus).
+
+**Alternatives écartées** :
+- Garder le match reporté bloquant : le classement et les tickets de toute la ligue seraient gelés pendant des semaines.
+- Rattacher le match rejoué à la journée suivante : complexe et surprenant pour les managers.
+- Un worker pour faire avancer la loterie : incompatible avec le serverless et le free tier.
+
+**Raison** : préférer une règle simple et prévisible qui ne gèle jamais la ligue.

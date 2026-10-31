@@ -140,7 +140,18 @@ export function computeTierThresholds(avgFantasies: number[]): { p5: number; p20
 
 // ─── Match scoring modifiers ───────────────────────────────────
 
-/** Bonus pts from same-club / same-nationality pairs among starters. Cap: 12 pts. */
+/** Paramètres des modificateurs de score (affichés tels quels sur la page Règles). */
+export const MODIFIERS = {
+  chemistryClubPair: 2,          // par paire de titulaires du même club
+  chemistryNationalityPair: 1,   // par paire de titulaires de même nationalité
+  chemistryCap: 8,
+  weekendMultiplier: 1.10,
+  weekendMinWinningTeams: 3,
+  defenseMaxReduction: 0.20,     // ×0,80 au maximum
+  defenseFullAtRaw: 30,          // contres + interceptions pour atteindre le maximum
+} as const;
+
+/** Bonus pts from same-club / same-nationality pairs among starters. Cap: 8 pts (recalibré pour le barème 2026-10). */
 export function computeChemistryBonus(
   starters: { team_id: number | null; nationality: string | null }[]
 ): number {
@@ -149,11 +160,11 @@ export function computeChemistryBonus(
     for (let j = i + 1; j < starters.length; j++) {
       const a = starters[i];
       const b = starters[j];
-      if (a.team_id !== null && a.team_id === b.team_id) bonus += 3;
-      if (a.nationality && b.nationality && a.nationality === b.nationality) bonus += 1.5;
+      if (a.team_id !== null && a.team_id === b.team_id) bonus += MODIFIERS.chemistryClubPair;
+      if (a.nationality && b.nationality && a.nationality === b.nationality) bonus += MODIFIERS.chemistryNationalityPair;
     }
   }
-  return Math.min(Math.round(bonus * 10) / 10, 12);
+  return Math.min(Math.round(bonus * 10) / 10, MODIFIERS.chemistryCap);
 }
 
 /**
@@ -167,7 +178,7 @@ export function computeWeekendMultiplier(
   const distinctWinners = new Set(
     starters.map(s => s.team_id).filter((id): id is number => id !== null && winningTeamIds.has(id))
   );
-  return distinctWinners.size >= 3 ? 1.10 : 1.00;
+  return distinctWinners.size >= MODIFIERS.weekendMinWinningTeams ? MODIFIERS.weekendMultiplier : 1.00;
 }
 
 /**
@@ -176,8 +187,8 @@ export function computeWeekendMultiplier(
  * Ranges smoothly from ×1.00 (no defense) to ×0.80 (defensiveRaw ≥ 30).
  */
 export function computeDefensiveMultiplier(defensiveRaw: number): number {
-  const clamped = Math.min(defensiveRaw / 30, 1);
-  return Math.round((1.0 - 0.20 * clamped) * 1000) / 1000;
+  const clamped = Math.min(defensiveRaw / MODIFIERS.defenseFullAtRaw, 1);
+  return Math.round((1.0 - MODIFIERS.defenseMaxReduction * clamped) * 1000) / 1000;
 }
 
 // ─── Position groups ────────────────────────────────────────────

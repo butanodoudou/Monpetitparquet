@@ -5,15 +5,7 @@ import {
   STARTER_SLOTS, POSITION_GROUP_MAP, computeDefaultStarters,
   type PositionGroup,
 } from '@/lib/fantasy';
-
-function isLineupLocked(): boolean {
-  const now = new Date();
-  const day = now.getUTCDay();
-  const hour = now.getUTCHours();
-  if (day === 5 && hour >= 22) return true;
-  if (day === 6 || day === 0) return true;
-  return false;
-}
+import { getPlayableWeek, isLeagueMember } from '@/lib/week-scoring';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -22,30 +14,35 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const supabase = db();
   const leagueId = params.id;
 
-  const { data: weekRow } = await supabase
-    .from('matches').select('week').eq('status', 'finished')
-    .order('week', { ascending: false }).limit(1).maybeSingle();
-  const currentWeek = weekRow?.week ?? 1;
+  if (!(await isLeagueMember(supabase, leagueId, auth.userId))) {
+    return NextResponse.json({ error: 'Tu n\'es pas membre de cette ligue' }, { status: 403 });
+  }
 
-  const [{ data: tps }, { data: lineupRow }] = await Promise.all([
+  // La composition s'applique à la prochaine journée à jouer
+  const { week: currentWeek, isLocked, lockAt } = await getPlayableWeek(supabase);
+
+  const [{ data: tps }, { data: lineupRows }] = await Promise.all([
     supabase
       .from('team_players')
       .select('player_id, player:players(id, name, position, photo_url, jersey_number, season_avg_fantasy, avg_points, avg_assists, avg_rebounds)')
       .eq('league_id', leagueId)
       .eq('user_id', auth.userId),
+    // Composition de la journée, sinon la dernière enregistrée
     supabase
       .from('weekly_lineups')
-      .select('starter_player_ids')
+      .select('week, starter_player_ids')
       .eq('league_id', leagueId)
       .eq('user_id', auth.userId)
-      .eq('week', currentWeek)
-      .maybeSingle(),
+      .lte('week', currentWeek)
+      .order('week', { ascending: false })
+      .limit(1),
   ]);
 
   const players = (tps ?? []).map(tp => tp.player as any).filter(Boolean);
+  const rosterIds = new Set<number>(players.map((p: any) => p.id));
 
-  let starterIds: number[] = lineupRow?.starter_player_ids ?? [];
-  if (!starterIds.length && players.length > 0) {
+  let starterIds: number[] = (lineupRows?.[0]?.starter_player_ids ?? []).filter((id: number) => rosterIds.has(id));
+  if (starterIds.length !== 5 && players.length > 0) {
     const roster = players.map((p: any) => ({
       player_id: p.id,
       position: p.position ?? '',
@@ -54,24 +51,30 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     starterIds = computeDefaultStarters(roster);
   }
 
-  return NextResponse.json({ currentWeek, isLocked: isLineupLocked(), starterIds, players });
+  return NextResponse.json({ currentWeek, isLocked, lockAt, starterIds, players });
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
   if (!auth) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
 
-  if (isLineupLocked()) {
-    return NextResponse.json({ error: 'Composition verrouillée jusqu\'à lundi' }, { status: 400 });
-  }
-
-  const { starterIds, week } = (await req.json()) as { starterIds: number[]; week: number };
-  if (!Array.isArray(starterIds) || starterIds.length !== 5) {
-    return NextResponse.json({ error: 'Il faut exactement 5 titulaires' }, { status: 400 });
-  }
-
   const supabase = db();
   const leagueId = params.id;
+
+  if (!(await isLeagueMember(supabase, leagueId, auth.userId))) {
+    return NextResponse.json({ error: 'Tu n\'es pas membre de cette ligue' }, { status: 403 });
+  }
+
+  // La journée est déterminée côté serveur (le client ne choisit pas)
+  const { week, isLocked } = await getPlayableWeek(supabase);
+  if (isLocked) {
+    return NextResponse.json({ error: 'Composition verrouillée : la journée a commencé' }, { status: 423 });
+  }
+
+  const { starterIds } = (await req.json()) as { starterIds: number[] };
+  if (!Array.isArray(starterIds) || starterIds.length !== 5 || new Set(starterIds).size !== 5) {
+    return NextResponse.json({ error: 'Il faut exactement 5 titulaires distincts' }, { status: 400 });
+  }
 
   const { data: tps } = await supabase
     .from('team_players')
@@ -98,10 +101,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
   }
 
-  await supabase.from('weekly_lineups').upsert(
+  const { error } = await supabase.from('weekly_lineups').upsert(
     { league_id: leagueId, user_id: auth.userId, week, starter_player_ids: starterIds, updated_at: new Date().toISOString() },
     { onConflict: 'league_id,user_id,week' }
   );
+  if (error) {
+    console.error('weekly_lineups upsert', error);
+    return NextResponse.json({ error: 'Échec de la sauvegarde de la composition' }, { status: 500 });
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, week });
 }

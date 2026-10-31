@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import { executeClosePack } from '@/lib/execute-close-pack';
+import { executeClosePack, CLOSING_STALE_MS } from '@/lib/execute-close-pack';
 
 // Any authenticated league member can trigger this.
 // It only acts if the current pack has expired (expires_at < now).
@@ -30,7 +30,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .lt('expires_at', now)
     .maybeSingle();
 
-  if (!expiredPack) {
+  // Reprise : pack bloqué en 'closing' depuis plus de 2 minutes (fonction plantée)
+  const staleBefore = new Date(Date.now() - CLOSING_STALE_MS).toISOString();
+  const { data: stuckPack } = expiredPack ? { data: null } : await supabase
+    .from('auction_packs')
+    .select('id')
+    .eq('league_id', leagueId)
+    .eq('status', 'closing')
+    .or(`closing_started_at.is.null,closing_started_at.lt.${staleBefore}`)
+    .maybeSingle();
+
+  if (!expiredPack && !stuckPack) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 

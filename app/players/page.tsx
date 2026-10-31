@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuthStore } from '@/store/authStore';
 import TopBar from '@/components/TopBar';
+import { apiFetch } from '@/lib/api-client';
 import BottomNav from '@/components/BottomNav';
 import PlayerCard, { type PlayerRow } from '@/components/PlayerCard';
 
@@ -14,6 +15,7 @@ export default function PlayersPage() {
   const router = useRouter();
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
@@ -24,9 +26,9 @@ export default function PlayersPage() {
 
   useEffect(() => {
     if (!token) return;
-    fetch('/api/players', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(setPlayers)
+    apiFetch<PlayerRow[]>('/api/players')
+      .then(data => setPlayers(Array.isArray(data) ? data : []))
+      .catch(e => setLoadError(e instanceof Error ? e.message : 'Erreur inattendue'))
       .finally(() => setLoading(false));
   }, [token]);
 
@@ -99,6 +101,8 @@ export default function PlayersPage() {
         <div className="px-4 mt-2 pb-4 space-y-2">
           {loading ? (
             Array.from({ length: 8 }).map((_, i) => <div key={i} className="card h-16 animate-pulse bg-slate-800/50" />)
+          ) : loadError ? (
+            <div className="text-center py-12 text-red-400 text-sm">{loadError}</div>
           ) : players.length === 0 ? (
             <div className="text-center py-16 card">
               <div className="text-4xl mb-3">🏀</div>

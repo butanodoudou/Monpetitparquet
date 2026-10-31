@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
-import { fetchRecentFinishedEvents, fetchEventsByRound, fetchEventLineups, CURRENT_SEASON } from '@/lib/sports-api';
+import { fetchRecentFinishedEvents, fetchEventsByRound, fetchEventLineups, fetchUpcomingMatches, CURRENT_SEASON } from '@/lib/sports-api';
+import { settleFinishedWeeks } from '@/lib/week-scoring';
 import { computeFantasyScore } from '@/lib/fantasy';
 
 // Called by Vercel Cron (daily at 23h) or manually with secret
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
 
 async function syncResults(round?: number) {
   const supabase = db();
-  const results = { matchesUpserted: 0, performancesUpserted: 0, errors: [] as string[] };
+  const results = { matchesUpserted: 0, upcomingUpserted: 0, performancesUpserted: 0, weeksSettled: 0, errors: [] as string[] };
 
   try {
     const events = round
@@ -128,6 +129,47 @@ async function syncResults(round?: number) {
 
   } catch (e: any) {
     results.errors.push(e.message);
+  }
+
+  // Matchs à venir (1 seul appel Sofascore) : alimente « Prochains matchs » et le verrou de compo
+  try {
+    const upcoming = await fetchUpcomingMatches();
+    if (upcoming.length > 0) {
+      // Un match déjà terminé en base ne repasse jamais en scheduled/postponed/etc.
+      const { data: done, error: doneErr } = await supabase
+        .from('matches')
+        .select('id')
+        .in('id', upcoming.map(m => m.id))
+        .eq('status', 'finished');
+      if (doneErr) throw new Error(doneErr.message);
+      const finishedIds = new Set<number>((done ?? []).map(r => r.id as number));
+
+      const now = new Date().toISOString();
+      const rows = upcoming
+        .filter(m => !finishedIds.has(m.id))
+        .map(m => ({ ...m, updated_at: now }));
+      if (rows.length > 0) {
+        const { error } = await supabase.from('matches').upsert(rows, { onConflict: 'id' });
+        if (error) throw new Error(error.message);
+        results.upcomingUpserted = rows.length;
+      }
+    }
+  } catch (e: any) {
+    results.errors.push(`Upcoming: ${e.message}`);
+  }
+
+  // Clôture des semaines terminées (vainqueur + scores finaux) pour toutes les ligues
+  try {
+    const { data: leagues } = await supabase.from('leagues').select('id');
+    for (const league of leagues ?? []) {
+      try {
+        results.weeksSettled += await settleFinishedWeeks(league.id);
+      } catch (e: any) {
+        results.errors.push(`Settle ${league.id}: ${e.message}`);
+      }
+    }
+  } catch (e: any) {
+    results.errors.push(`Settle: ${e.message}`);
   }
 
   return NextResponse.json(results);

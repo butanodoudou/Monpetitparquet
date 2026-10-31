@@ -4,6 +4,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import TopBar from '@/components/TopBar';
+import { apiFetch } from '@/lib/api-client';
 import BottomNav from '@/components/BottomNav';
 import PlayerCard, { type PlayerRow } from '@/components/PlayerCard';
 
@@ -32,21 +33,24 @@ export default function TeamPage() {
   const [starterIds, setStarterIds] = useState<Set<number>>(new Set());
   const [tab, setTab] = useState<'equipe' | 'classement'>('equipe');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!token) { router.replace('/auth'); return; }
     Promise.all([
-      fetch(`/api/teams/${leagueId}/my-team`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(`/api/teams/${leagueId}/standings`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(`/api/leagues/${leagueId}/week`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : null),
-      fetch(`/api/leagues/${leagueId}/lineup`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : null),
+      apiFetch(`/api/teams/${leagueId}/my-team`),
+      apiFetch(`/api/teams/${leagueId}/standings`),
+      // Données secondaires : leur échec ne bloque pas la page (sauf 401, géré par apiFetch)
+      apiFetch(`/api/leagues/${leagueId}/week`).catch(() => null),
+      apiFetch(`/api/leagues/${leagueId}/lineup`).catch(() => null),
     ]).then(([teamData, standingsData, wd, lineupData]) => {
-      setPlayers(teamData.players ?? []);
-      setTotalScore(teamData.totalScore ?? 0);
-      setStandings(standingsData ?? []);
+      setPlayers(teamData?.players ?? []);
+      setTotalScore(teamData?.totalScore ?? 0);
+      setStandings(Array.isArray(standingsData) ? standingsData : []);
       if (wd) setWeekData(wd);
       if (lineupData?.starterIds) setStarterIds(new Set(lineupData.starterIds));
-    }).finally(() => setLoading(false));
+    }).catch(e => setLoadError(e instanceof Error ? e.message : 'Erreur inattendue'))
+      .finally(() => setLoading(false));
   }, [token, leagueId]);
 
   const myRank = standings.findIndex(s => s.user_id === user?.id) + 1;
@@ -59,6 +63,15 @@ export default function TeamPage() {
   if (loading) return (
     <div className="page"><TopBar title="Mon équipe" back />
       <div className="flex-1 flex items-center justify-center"><div className="text-4xl animate-bounce">🏀</div></div>
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="page"><TopBar title="Mon équipe" back />
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-red-400 text-sm mb-4">{loadError}</p>
+        <button className="btn-secondary max-w-xs" onClick={() => window.location.reload()}>Réessayer</button>
+      </div>
     </div>
   );
 

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { apiFetch, ApiError } from '@/lib/api-client';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
 import {
@@ -32,6 +33,7 @@ export default function LineupPage() {
   const [starterIds, setStarterIds] = useState<Set<number>>(new Set());
   const [currentWeek, setCurrentWeek] = useState(1);
   const [isLocked, setIsLocked] = useState(false);
+  const [lockAt, setLockAt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -39,14 +41,15 @@ export default function LineupPage() {
 
   useEffect(() => {
     if (!token) { router.replace('/auth'); return; }
-    fetch(`/api/leagues/${leagueId}/lineup`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
+    apiFetch(`/api/leagues/${leagueId}/lineup`)
       .then(data => {
         setPlayers(data.players ?? []);
         setStarterIds(new Set(data.starterIds ?? []));
         setCurrentWeek(data.currentWeek ?? 1);
         setIsLocked(data.isLocked ?? false);
+        setLockAt(data.lockAt ?? null);
       })
+      .catch(e => { if (!(e instanceof ApiError && e.status === 401)) setError(e instanceof Error ? e.message : 'Erreur de chargement'); })
       .finally(() => setLoading(false));
   }, [token, leagueId]);
 
@@ -84,15 +87,19 @@ export default function LineupPage() {
     if (!token || !isValid()) return;
     setSaving(true);
     setError('');
-    const res = await fetch(`/api/leagues/${leagueId}/lineup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ starterIds: Array.from(starterIds), week: currentWeek }),
-    });
-    const data = await res.json();
+    try {
+      await apiFetch(`/api/leagues/${leagueId}/lineup`, {
+        method: 'POST',
+        body: JSON.stringify({ starterIds: Array.from(starterIds) }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // déconnexion déjà gérée
+      if (e instanceof ApiError && e.status === 423) setIsLocked(true);
+      setError(e instanceof Error ? e.message : 'Échec de la sauvegarde');
+    }
     setSaving(false);
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    else setError(data.error);
   };
 
   if (loading) return (
@@ -116,7 +123,7 @@ export default function LineupPage() {
             <div className="text-slate-500 text-xs mt-0.5">2 arrières · 1 ailier · 2 grands</div>
           </div>
           {isLocked
-            ? <span className="bg-red-500/20 text-red-400 text-xs font-bold px-3 py-1.5 rounded-full">🔒 Verrouillé</span>
+            ? <span className="bg-red-500/20 text-red-400 text-xs font-bold px-3 py-1.5 rounded-full">🔒 Composition verrouillée</span>
             : <span className="bg-green-500/20 text-green-400 text-xs font-bold px-3 py-1.5 rounded-full">🟢 Ouvert</span>
           }
         </div>
@@ -200,7 +207,7 @@ export default function LineupPage() {
           )}
           {isLocked && (
             <div className="text-center text-slate-500 text-sm py-4">
-              🔒 La composition est verrouillée le vendredi soir jusqu'au lundi
+              🔒 Composition verrouillée : la journée {currentWeek} a commencé{lockAt ? ` (${new Date(lockAt).toLocaleString('fr-FR', { weekday: 'long', hour: '2-digit', minute: '2-digit' })})` : ''}
             </div>
           )}
         </div>

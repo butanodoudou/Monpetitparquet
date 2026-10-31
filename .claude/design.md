@@ -60,9 +60,9 @@ pts×1 + ast×2 + reb×1.5 + stl×3 + blk×3 - to×2 + 3pts×0.5
 Appliqués dans `app/api/leagues/[id]/week/route.ts` sur les scores des titulaires.
 
 ### 1. Bonus chimie (`lib/fantasy.ts:computeChemistryBonus`)
-- +3 pts par paire de titulaires dans le même vrai club (`team_id` égaux)
-- +1.5 pts par paire de compatriotes (`nationality` égale)
-- Cap : +12 pts max
+- +2 pts par paire de titulaires dans le même vrai club (`team_id` égaux)
+- +1 pt par paire de compatriotes (`nationality` égale)
+- Cap : +8 pts max (recalibré le 2026-10-15)
 
 ### 2. Bonus victoire weekend (`lib/fantasy.ts:computeWeekendMultiplier`)
 - ×1.10 si ≥3 équipes réelles **distinctes** parmi les titulaires ont gagné le Sat/Sun de la semaine
