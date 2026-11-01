@@ -82,5 +82,5 @@ CRON_SECRET
 - **Client** : tous les appels authentifiés passent par `lib/api-client.ts` (`apiFetch`, déconnexion sur 401).
 - **Nouvelles pages** : `/rules`, `/leagues/[id]/lottery`. Lien d'invitation `/leagues?join=CODE`, qui survit au passage par `/auth?next=`.
 - **Crons** : `sync/results` 23h UTC (résultats + matchs à venir + clôture des duels), `sync/averages` 23h30, `lottery/run` lundi 8h UTC.
-- **Migrations à appliquer dans l'ordre** : 2026-10-08 (NE PAS rejouer), 2026-10-15_auction-tables, 2026-10-30_core-fixes, 2026-10-30_draft-fixes, 2026-10-30_lottery, 2026-10-31_v0-fixes.
+- **Migrations à appliquer dans l'ordre** : 2026-10-31_prod-drift (EN PREMIER : matches.season était integer en prod), 2026-10-08 (NE PAS rejouer), 2026-10-15_auction-tables, 2026-10-30_core-fixes, 2026-10-30_draft-fixes, 2026-10-30_lottery, 2026-10-31_v0-fixes.
 - Coupé de la beta : marché des transferts, trades, In Form, capitaine ×2, notifications push.
