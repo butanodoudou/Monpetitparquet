@@ -2,7 +2,7 @@
 // Sofascore is behind Cloudflare: route requests through ScraperAPI in production.
 // SCRAPER_API_KEY env var required on Vercel (free tier: 1000 req/month).
 
-const SOFA_BASE = 'https://api.sofascore.com/api/v1';
+const SOFA_BASE = 'https://www.sofascore.com/api/v1';
 export const TOURNAMENT_ID = 156;      // LNB Élite (ex Pro A / Betclic Élite)
 export const SEASON_ID     = 102568;   // LNB Élite 26/27
 // Libellé stocké en base (matches.season). À incrémenter avec SEASON_ID.
@@ -16,16 +16,36 @@ function buildUrl(path: string): string {
   return target;
 }
 
+// Le proxy renvoie parfois une page HTML avec un statut 200 : un nouvel essai suffit en général.
+const MAX_ATTEMPTS = 3;
+
 async function sfFetch<T>(path: string): Promise<T> {
-  const res = await fetch(buildUrl(path), {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-    },
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(`Sofascore ${path} → HTTP ${res.status}`);
-  return res.json();
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(buildUrl(path), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+      next: { revalidate: 0 },
+    });
+
+    if (res.ok) {
+      try {
+        return (await res.json()) as T;
+      } catch {
+        lastError = new Error(`Sofascore ${path} → réponse non JSON`);
+        continue;
+      }
+    }
+
+    lastError = new Error(`Sofascore ${path} → HTTP ${res.status}`);
+    // Une erreur 4xx ne changera pas au prochain essai : inutile de consommer du quota.
+    if (res.status < 500 && res.status !== 429) break;
+  }
+
+  throw lastError;
 }
 
 export interface SofaTeam {

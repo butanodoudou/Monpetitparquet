@@ -28,6 +28,8 @@ const ZEROED_AVERAGES = {
   games_played: 0,
 };
 
+const PAGE_SIZE = 1000;
+
 // Called by Vercel Cron (daily at 23h30, after sync/results) or manually with secret
 export async function GET(req: NextRequest) {
   const secret = req.headers.get('authorization')?.replace('Bearer ', '') ??
@@ -52,14 +54,24 @@ async function syncAverages() {
 
   // Averages are per-season: join matches to keep only the current season's games.
   // player_performances has no season column of its own — matches.season is the source of truth.
-  const { data: perfs, error } = await supabase
-    .from('player_performances')
-    .select(
-      'player_id, points, assists, rebounds, steals, blocks, turnovers, three_pointers, minutes_played, fantasy_score, matches!inner(season)'
-    )
-    .eq('matches.season', CURRENT_SEASON);
+  // Supabase plafonne chaque réponse à 1000 lignes : on lit la saison page par page.
+  const perfs: PerfRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('player_performances')
+      .select(
+        'player_id, points, assists, rebounds, steals, blocks, turnovers, three_pointers, minutes_played, fantasy_score, matches!inner(season)'
+      )
+      .eq('matches.season', CURRENT_SEASON)
+      .order('match_id')
+      .order('player_id')
+      .range(from, from + PAGE_SIZE - 1);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    perfs.push(...((data ?? []) as unknown as PerfRow[]));
+    if ((data?.length ?? 0) < PAGE_SIZE) break;
+  }
 
   // Reset everyone first: a player with no game this season must read 0, not last season's
   // numbers. Without this, relegated or retired players keep stale averages and pollute the

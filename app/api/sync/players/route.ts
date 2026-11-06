@@ -16,6 +16,8 @@ export async function POST(req: NextRequest) {
   const supabase = db();
   const results = { teams: 0, players: 0, deactivated: 0, pruned: false, errors: [] as string[] };
   const activeIds = new Set<number>();
+  // Club dont l'effectif n'a pas pu être lu : on l'ignore pour cette fois sans désactiver ses joueurs.
+  const failedTeamIds: number[] = [];
 
   try {
     const teams = await fetchTeams();
@@ -31,7 +33,14 @@ export async function POST(req: NextRequest) {
       );
       results.teams++;
 
-      const players = await fetchTeamPlayers(team.id);
+      let players: Awaited<ReturnType<typeof fetchTeamPlayers>>;
+      try {
+        players = await fetchTeamPlayers(team.id);
+      } catch (e: any) {
+        failedTeamIds.push(team.id);
+        results.errors.push(`${team.name} : ${e.message ?? e}`);
+        continue;
+      }
 
       for (const player of players) {
         const nameParts = player.name.split(' ');
@@ -63,12 +72,15 @@ export async function POST(req: NextRequest) {
     // leurs performances passées restent référencées.
     if (activeIds.size >= MIN_PLAYERS_TO_PRUNE) {
       const idList = `(${Array.from(activeIds).join(',')})`;
-      const { data: gone, error: pruneError } = await supabase
+      let prune = supabase
         .from('players')
         .update({ is_active: false, updated_at: new Date().toISOString() })
         .not('id', 'in', idList)
-        .eq('is_active', true)
-        .select('id');
+        .eq('is_active', true);
+      if (failedTeamIds.length > 0) {
+        prune = prune.not('team_id', 'in', `(${failedTeamIds.join(',')})`);
+      }
+      const { data: gone, error: pruneError } = await prune.select('id');
 
       if (pruneError) results.errors.push(`Prune: ${pruneError.message}`);
       else {
