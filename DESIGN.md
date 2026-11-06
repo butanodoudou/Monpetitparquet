@@ -19,7 +19,7 @@ Clair, haut de gamme, objet de collection. Mode clair uniquement.
 | Laiton | `#B07A1E` | Filets et fonds uniquement : contraste trop faible pour du texte |
 | Laiton encre | `#7E5409` | Texte accentué |
 | Laiton doux | `#F3E7CC` | Halo de focus, fonds doux |
-| Améthyste | `#5B3FA6` | Élite |
+| Améthyste | `#5B3FA6` | Platine |
 | Cuivre | `#B58A66` | Bronze |
 | Sirène | `#B3281A` | Uniquement le chrono des dernières heures et le « en cours » |
 | LED | `#EDBE55` | Chiffres du tableau de score |
@@ -37,13 +37,13 @@ Chaque tier combine une matière, un cadre, une jauge de losanges et son nom éc
 | Bronze | Papier mat grainé, cuivre | Filet simple | 1 |
 | Silver | Métal brossé | Filet et liseré blanc | 2 |
 | Gold | Feuille d'or satinée, guillochis | Double filet | 3 |
-| Élite | Fond encre, bordure nacrée | Reflet qui suit le doigt | 4 |
+| Platine | Fond encre, bordure nacrée | Reflet qui suit le doigt | 4 |
 
-Le glow est réservé à l'Élite.
+Le glow est réservé au Platine. Le niveau d'un joueur n'est jamais affiché : une carte montre sa rareté et sa moyenne. Composant : `components/cards/GameCard.tsx`.
 
 ## Tableau de score
 
-Le seul objet sombre de l'app, avec la carte Élite, et la source de la tension. Il suit le moment de la semaine (`lib/week-phase.ts`) : éteint au calme, chrono rouge dans les 3 dernières heures, points sous scellé en soirée de match, verdict après la clôture. Référence : `design/ambiance-lnb.html`.
+Le seul objet sombre de l'app, avec la carte Platine, et la source de la tension. Il suit le moment de la semaine (`lib/week-phase.ts`) : éteint au calme, chrono rouge dans les 3 dernières heures, points sous scellé en soirée de match, verdict après la clôture. Référence : `design/ambiance-lnb.html`.
 
 ## Mouvement
 

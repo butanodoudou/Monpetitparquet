@@ -549,3 +549,20 @@ Points clés :
 **Alternatives écartées** : reprendre les pages à la main (long, plus de risques d'oubli) ; garder `slate` en inversant ses valeurs (rapide mais trompeur à relire).
 
 **Raison** : la migration par rôle garde une seule source de vérité pour la palette.
+
+---
+
+## [veto possible] Le draft devient un jeu de cartes (2026-11-07)
+
+**Contexte** : l'utilisateur juge le draft et les enchères trop longs à organiser, et veut un jeu de cartes à collectionner.
+
+**Décision** :
+- Règles dans `.claude/specs/cartes.md` : cartes liées au compte, doublons permis, quatre raretés qui modifient les points, tous les postes jouables avec malus, paquets gagnés au fil de la saison.
+- Remplace le draft, les enchères, les cartes uniques par ligue, la rareté cosmétique et le roster limité.
+- `team_players` et les tables d'enchères restent en base, sans être lues, le temps de la bascule.
+- Le cinq d'une journée est évalué au verrou, avec les cartes alors possédées. Vendre une carte ensuite ne change pas un duel joué.
+- Le cinq de l'adversaire n'est pas renvoyé par l'API avant le verrou.
+
+**Alternatives écartées** : garder les cartes uniques par ligue (réservoir à partager, limite de managers, pénurie de grands) ; fusion de 4 cartes identiques (moins de 2 % de chances sur une saison, remplacée par l'amélioration avec sacrifices) ; ignorer `consumed_at` pour les cinq enregistrés (une carte vendue aurait compté pour une journée future).
+
+**Raison** : un démarrage en quelques minutes, sans réunir tout le monde, et une collection qui donne une raison de revenir.

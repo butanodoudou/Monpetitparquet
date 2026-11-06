@@ -2,7 +2,7 @@
 
 ## Le produit
 
-Un jeu de fantasy basket sur la LNB Élite, qu'on joue en ligue privée entre amis. On drafte ses joueurs, on aligne son cinq, on affronte un ami en duel chaque journée, et la loterie du lundi distribue de nouveaux joueurs.
+Un jeu de cartes à collectionner sur la LNB Élite, qu'on joue en ligue privée entre amis. On ouvre des paquets, on aligne son cinq, on affronte un ami en duel chaque journée, et les vrais matchs font les points. La collection appartient au compte.
 
 ## Pour qui
 
@@ -21,5 +21,6 @@ Tutoiement, phrases courtes, vocabulaire du basket. Comme un pote qui suit la LN
 - Mobile d'abord, 480 px de large au maximum.
 - Interface en français.
 - Connexion par pseudo et lien personnel, sans mot de passe.
-- En beta, la rareté reste cosmétique : elle ne donne aucun point.
+- La rareté d'une carte modifie ses points : voir `.claude/specs/cartes.md`.
+- Monnaie virtuelle uniquement, jamais d'argent réel.
 - Aucun visuel ni marque de FIFA, EA ou Sorare.

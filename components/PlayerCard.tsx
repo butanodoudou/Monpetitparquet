@@ -28,7 +28,6 @@ export interface PlayerRow {
   season_avg_fantasy: number;
   total_fantasy?: number;
   last_week_fantasy?: number;
-  drafted_by?: string | null;
   games_played?: number;
   nationality?: string | null;
 }
