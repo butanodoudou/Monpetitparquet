@@ -103,10 +103,10 @@ export default function AuthPage() {
         </div>
         <div className="auth-form">
           <LoginLinkBox link={newLink} shareText="Mon lien Mon Petit Parquet, à garder pour moi" />
-          <button type="button" className="btn-primary" onClick={() => router.replace(nextUrl())}>
-            {invite ? `Rejoindre ${invite.leagueName}` : "C'est bon, je l'ai gardé"}
+          <button type="button" className="btn-primary" onClick={() => router.replace(`/packs?next=${encodeURIComponent(nextUrl())}`)}>
+            Ouvrir mes paquets
           </button>
-          <p className="auth-foot">Tu le retrouveras aussi sur l&apos;accueil de l&apos;app.</p>
+          <p className="auth-foot">Cinq paquets de bienvenue t&apos;attendent. Tu retrouveras ton lien sur l&apos;accueil de l&apos;app.</p>
         </div>
       </main>
     );
@@ -133,7 +133,7 @@ export default function AuthPage() {
         ) : mode === 'register' ? (
           <>
             <h1 className="auth-title">Ton équipe, tes potes, la LNB Élite.</h1>
-            <p className="auth-sub">Drafte tes joueurs, défie tes amis chaque week-end et tente ta chance à la loterie du lundi.</p>
+            <p className="auth-sub">Ouvre tes paquets, aligne ton cinq et défie tes amis chaque semaine.</p>
           </>
         ) : (
           <>

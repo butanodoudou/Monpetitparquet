@@ -1,219 +1,295 @@
 'use client';
-import { formatPoints } from '@/lib/format';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
-import {
-  STARTER_SLOTS, POSITION_GROUP_MAP, GROUP_LABELS,
-  type PositionGroup,
-} from '@/lib/fantasy';
+import Icon from '@/components/Icon';
+import GameCard, { EmptyCard } from '@/components/cards/GameCard';
+import { GROUP_SINGULAR, estimate, percent, positionText, pts, rarityText, times } from '@/components/cards/labels';
+import { LINEUP_SLOTS, cardMultiplier, positionMultiplier } from '@/lib/cards';
+import type { CardView, LineupState } from '@/lib/card-view';
+import { formatCountdown } from '@/lib/week-phase';
 
-interface Player {
-  id: number;
-  name: string;
-  position: string;
-  photo_url: string | null;
-  jersey_number: number | null;
-  season_avg_fantasy: number;
-  avg_points: number;
-  avg_assists: number;
-  avg_rebounds: number;
-}
-
-const GROUP_ORDER: PositionGroup[] = ['arriere', 'sf', 'grand'];
+// Rangées du demi-terrain : arrières au large, ailier à l'aile, intérieurs sous le panier
+const ROWS: number[][] = [[0, 1], [2], [3, 4]];
+const EMPTY_SLOTS: (string | null)[] = LINEUP_SLOTS.map(() => null);
 
 export default function LineupPage() {
   const { id: leagueId } = useParams<{ id: string }>();
   const { token } = useAuthStore();
   const router = useRouter();
 
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [starterIds, setStarterIds] = useState<Set<number>>(new Set());
-  const [currentWeek, setCurrentWeek] = useState(1);
-  const [isLocked, setIsLocked] = useState(false);
-  const [lockAt, setLockAt] = useState<string | null>(null);
+  const [state, setState] = useState<LineupState | null>(null);
+  const [slots, setSlots] = useState<(string | null)[]>(EMPTY_SLOTS);
+  const [saved, setSaved] = useState<string>('');
+  const [picking, setPicking] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [now, setNow] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!token) { router.replace('/auth'); return; }
-    apiFetch(`/api/leagues/${leagueId}/lineup`)
+  const load = () => {
+    setLoading(true);
+    setError('');
+    apiFetch<LineupState>(`/api/leagues/${leagueId}/lineup`)
       .then(data => {
-        setPlayers(data.players ?? []);
-        setStarterIds(new Set(data.starterIds ?? []));
-        setCurrentWeek(data.currentWeek ?? 1);
-        setIsLocked(data.isLocked ?? false);
-        setLockAt(data.lockAt ?? null);
+        setState(data);
+        const ids = LINEUP_SLOTS.map((_, i) => data.starterCardIds?.[i] ?? null);
+        setSlots(ids);
+        setSaved(ids.join(','));
       })
       .catch(e => { if (!(e instanceof ApiError && e.status === 401)) setError(e instanceof Error ? e.message : 'Erreur de chargement'); })
       .finally(() => setLoading(false));
-  }, [token, leagueId]);
-
-  const togglePlayer = (player: Player) => {
-    if (isLocked) return;
-    const group = POSITION_GROUP_MAP[player.position] as PositionGroup | undefined;
-    if (!group) return;
-
-    const next = new Set(starterIds);
-    if (next.has(player.id)) {
-      next.delete(player.id);
-    } else {
-      const groupStarters = players.filter(p => POSITION_GROUP_MAP[p.position] === group && next.has(p.id));
-      if (groupStarters.length >= STARTER_SLOTS[group]) {
-        next.delete(groupStarters[0].id);
-      }
-      next.add(player.id);
-    }
-    setStarterIds(next);
-    setSaved(false);
-    setError('');
   };
 
-  const isValid = () => {
-    const counts: Record<PositionGroup, number> = { arriere: 0, sf: 0, grand: 0 };
-    for (const id of Array.from(starterIds)) {
-      const p = players.find(pl => pl.id === id);
-      const g = p ? POSITION_GROUP_MAP[p.position] as PositionGroup | undefined : undefined;
-      if (g) counts[g]++;
-    }
-    return (Object.entries(STARTER_SLOTS) as [PositionGroup, number][]).every(([g, s]) => counts[g] === s);
+  useEffect(() => {
+    if (!token) { router.replace('/auth'); return; }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, leagueId]);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const byId = useMemo(() => {
+    const m: Record<string, CardView> = {};
+    (state?.cards ?? []).forEach(c => { m[c.id] = c; });
+    return m;
+  }, [state]);
+
+  const cardAt = (i: number): CardView | null => (slots[i] ? byId[slots[i]!] ?? null : null);
+  const filled = slots.filter(s => s && byId[s]).length;
+  const dirty = slots.join(',') !== saved;
+  const locked = !!state?.isLocked;
+
+  const total = LINEUP_SLOTS.reduce((sum, slot, i) => {
+    const c = cardAt(i);
+    return c ? sum + estimate(c.player.season_avg_fantasy, c.rarity, c.player.group, slot) : sum;
+  }, 0);
+
+  const place = (slotIndex: number, cardId: string | null) => {
+    setSlots(prev => prev.map((s, i) => (i === slotIndex ? cardId : s)));
+    setJustSaved(false);
+    setError('');
+    setPicking(null);
   };
 
   const save = async () => {
-    if (!token || !isValid()) return;
+    if (filled !== LINEUP_SLOTS.length || saving || locked) return;
     setSaving(true);
     setError('');
     try {
-      await apiFetch(`/api/leagues/${leagueId}/lineup`, {
-        method: 'POST',
-        body: JSON.stringify({ starterIds: Array.from(starterIds) }),
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      await apiFetch(`/api/leagues/${leagueId}/lineup`, { method: 'POST', body: JSON.stringify({ starterCardIds: slots }) });
+      setSaved(slots.join(','));
+      setJustSaved(true);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return; // déconnexion déjà gérée
-      if (e instanceof ApiError && e.status === 423) setIsLocked(true);
-      setError(e instanceof Error ? e.message : 'Échec de la sauvegarde');
+      if (e instanceof ApiError && e.status === 401) return;
+      if (e instanceof ApiError && e.status === 423) setState(s => (s ? { ...s, isLocked: true } : s));
+      setError(e instanceof Error ? e.message : 'Ton cinq n’a pas pu être enregistré');
     }
     setSaving(false);
   };
 
+  if (!token) return null;
+
   if (loading) return (
-    <div className="page"><TopBar title="Composition" back />
-      <div className="flex-1 flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-line border-t-brass animate-spin" /></div>
+    <div className="page"><TopBar title="Mon cinq" back />
+      <div className="flex-1 flex items-center justify-center" role="status" aria-label="Chargement"><div className="w-8 h-8 rounded-full border-2 border-line border-t-brass animate-spin" /></div>
+    </div>
+  );
+  if (!state) return (
+    <div className="page"><TopBar title="Mon cinq" back />
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-3" role="alert">
+        <p className="font-display text-xl font-bold">Ton cinq ne s’est pas chargé</p>
+        <p className="text-sm text-ink2">{error}</p>
+        <button className="btn-secondary max-w-xs" onClick={load}>Réessayer</button>
+      </div>
     </div>
   );
 
-  const groupedPlayers = GROUP_ORDER.reduce((acc, g) => {
-    acc[g] = players.filter(p => POSITION_GROUP_MAP[p.position] === g);
-    return acc;
-  }, {} as Record<PositionGroup, Player[]>);
+  const remainingMs = state.lockAt && now ? new Date(state.lockAt).getTime() - now : null;
+  const urgent = remainingMs !== null && remainingMs > 0 && remainingMs < 3 * 3_600_000;
 
   return (
     <div className="page">
-      <TopBar title="Composition" back />
-      <div className="page-scroll">
-        <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+      <TopBar title="Mon cinq" back />
+      <div className="page-scroll" style={{ paddingBottom: 168 }}>
+        <div className="px-4 pt-4 flex items-end justify-between gap-3">
           <div>
-            <div className="text-ink font-black text-lg">Journée {currentWeek}</div>
-            <div className="text-muted text-xs mt-0.5">2 arrières · 1 ailier · 2 grands</div>
+            <h2 className="font-display text-2xl font-bold leading-tight">Journée {state.currentWeek}</h2>
+            <p className="text-sm text-ink2 mt-0.5">
+              {filled === 5 ? <>Estimation : <b className="text-ink font-display text-base" style={{ fontVariantNumeric: 'lining-nums' }}>{pts(total)}</b></> : `${filled} carte${filled > 1 ? 's' : ''} sur 5`}
+            </p>
           </div>
-          {isLocked
-            ? <span className="bg-red-500/20 text-red-700 text-xs font-bold px-3 py-1.5 rounded-full">Composition verrouillée</span>
-            : <span className="bg-green-500/20 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full">Ouvert</span>
-          }
+          {locked ? (
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink2 bg-raised rounded-full px-3 min-h-[36px]">
+              <Icon name="lock" size={18} /> Verrouillé
+            </span>
+          ) : remainingMs !== null && remainingMs > 0 ? (
+            <span className={`text-sm font-semibold text-right ${urgent ? 'text-siren' : 'text-ink2'}`}>
+              Verrouillage dans<br /><span className="font-display text-lg font-bold" style={{ fontVariantNumeric: 'lining-nums' }}>{formatCountdown(remainingMs)}</span>
+            </span>
+          ) : null}
         </div>
 
-        {error && (
-          <div className="mx-4 mt-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2 text-red-700 text-xs">{error}</div>
+        {locked && (
+          <p className="mx-4 mt-3 rounded-xl bg-raised px-4 py-3 text-sm text-ink2">
+            Ton cinq est verrouillé : la journée a commencé
+            {state.lockAt ? ` (${new Date(state.lockAt).toLocaleString('fr-FR', { weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }).replace(':', 'h')})` : ''}.
+          </p>
+        )}
+        {error && <p className="mx-4 mt-3 rounded-xl border border-[#E4B4B0] bg-[#FDF3F2] px-4 py-3 text-sm text-[#8C1D18]" role="alert">{error}</p>}
+
+        {state.cards.length < 5 && (
+          <p className="mx-4 mt-3 rounded-xl bg-brand-light px-4 py-3 text-sm text-ink">
+            Il te faut au moins 5 cartes de joueurs différents pour aligner un cinq. Ouvre tes paquets dans l’onglet Cartes.
+          </p>
         )}
 
-        {GROUP_ORDER.map(group => {
-          const gPlayers = groupedPlayers[group] ?? [];
-          const starterCount = gPlayers.filter(p => starterIds.has(p.id)).length;
-          const maxStarters = STARTER_SLOTS[group];
-
-          return (
-            <div key={group} className="px-4 mt-5">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-bold text-ink2">{GROUP_LABELS[group]}</span>
-                <div className="flex gap-1">
-                  {Array.from({ length: maxStarters }).map((_, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full transition-colors ${i < starterCount ? 'bg-brand' : 'bg-raised'}`} />
+        {/* Demi-terrain 2-1-2 */}
+        <div className="px-4 mt-4">
+          <div className="court px-3 pt-4 pb-5">
+            <i className="c-mid" /><i className="c-three" /><i className="c-key" /><i className="c-ft" /><i className="c-rim" />
+            <div className="relative flex flex-col gap-3">
+              {ROWS.map((row, r) => (
+                <div key={r} className="flex justify-around">
+                  {row.map(i => (
+                    <Slot key={i} index={i} card={cardAt(i)} locked={locked} onOpen={() => setPicking(i)} />
                   ))}
                 </div>
-                <span className={`text-xs font-semibold ${starterCount === maxStarters ? 'text-brand' : 'text-muted'}`}>
-                  {starterCount}/{maxStarters}
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {gPlayers.map(player => {
-                  const isStarter = starterIds.has(player.id);
-                  return (
-                    <button
-                      key={player.id}
-                      onClick={() => togglePlayer(player)}
-                      disabled={isLocked}
-                      className={`w-full card flex items-center gap-3 text-left transition-all ${
-                        isStarter ? 'border-brand/50 bg-brand/5' : ''
-                      } ${!isLocked ? 'active:scale-[0.98]' : 'opacity-70 cursor-default'}`}
-                    >
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 transition-colors ${
-                        isStarter ? 'bg-brand text-on-accent' : 'bg-raised text-ink2'
-                      }`}>
-                        {isStarter ? '✓' : (player.jersey_number ?? player.position[0])}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-ink text-sm truncate">{player.name}</div>
-                        <div className="text-xs text-muted">
-                          {player.position} · {player.avg_points.toFixed(0)}pts {player.avg_assists.toFixed(0)}ast {player.avg_rebounds.toFixed(0)}reb
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className={`font-black text-sm ${isStarter ? 'text-brand' : 'text-ink2'}`}>
-                          {formatPoints(player.season_avg_fantasy)}
-                        </div>
-                        <div className="text-[10px] text-muted">moy/match</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              ))}
             </div>
-          );
-        })}
-
-        <div className="px-4 mt-6 pb-8">
-          {!isLocked && (
-            <>
-              <button
-                onClick={save}
-                disabled={saving || !isValid()}
-                className={`btn-primary w-full py-3 transition-all ${!isValid() ? 'opacity-40' : ''}`}
-              >
-                {saving ? 'Sauvegarde…' : saved ? '✓ Composition sauvegardée !' : 'Valider ma composition'}
-              </button>
-              {!isValid() && (
-                <div className="text-center text-xs text-muted mt-2">
-                  Sélectionne 2 arrières + 1 ailier + 2 grands
-                </div>
-              )}
-            </>
-          )}
-          {isLocked && (
-            <div className="text-center text-muted text-sm py-4">
-              Composition verrouillée : la journée {currentWeek} a commencé{lockAt ? ` (${new Date(lockAt).toLocaleString('fr-FR', { weekday: 'long', hour: '2-digit', minute: '2-digit' })})` : ''}
-            </div>
-          )}
+          </div>
         </div>
       </div>
+
+      {/* Validation */}
+      {!locked && (
+        <div className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] bottom-16 z-40 px-4 pb-2 pt-3 bg-paper/95 border-t border-line">
+          <button type="button" className="btn-primary" onClick={save} disabled={filled !== 5 || saving || (!dirty && !justSaved)}>
+            {saving ? 'Enregistrement…' : justSaved && !dirty ? 'Cinq enregistré' : 'Valider mon cinq'}
+          </button>
+          {filled !== 5 && <p className="text-center text-xs text-ink2 mt-1.5">Touche une place pour choisir une carte.</p>}
+        </div>
+      )}
+
+      {picking !== null && (
+        <PickSheet
+          slotIndex={picking}
+          cards={state.cards}
+          slots={slots}
+          onPick={id => place(picking, id)}
+          onClear={() => place(picking, null)}
+          onClose={() => setPicking(null)}
+        />
+      )}
       <BottomNav />
+    </div>
+  );
+}
+
+function Slot({ index, card, locked, onOpen }: { index: number; card: CardView | null; locked: boolean; onOpen: () => void }) {
+  const slot = LINEUP_SLOTS[index];
+  const natural = card?.player.group;
+  const posMult = natural ? positionMultiplier(natural, slot) : 1;
+  return (
+    <div className="w-[30%]">
+      <button type="button" onClick={onOpen} disabled={locked && !card}
+        aria-label={card ? `${GROUP_SINGULAR[slot]} : ${card.player.name}. Changer` : `${GROUP_SINGULAR[slot]} : place vide. Choisir une carte`}
+        className="block w-full rounded-[12px] active:scale-[.97] transition-transform disabled:cursor-default">
+        {card ? <GameCard card={card} fluid /> : <EmptyCard label={GROUP_SINGULAR[slot]} />}
+      </button>
+      <p className="mt-1.5 text-center text-xs leading-tight">
+        {card ? (
+          <>
+            <span className="block font-semibold text-ink">{GROUP_SINGULAR[slot]} · {times(cardMultiplier(card.rarity, card.player.group, slot))}</span>
+            <span className={`block ${posMult < 1 ? 'text-ink' : 'text-ink2'}`}>{posMult < 1 ? `poste ${percent(posMult)}` : 'poste naturel'}</span>
+          </>
+        ) : <span className="block text-ink2">{GROUP_SINGULAR[slot]}</span>}
+      </p>
+    </div>
+  );
+}
+
+function PickSheet({ slotIndex, cards, slots, onPick, onClear, onClose }: {
+  slotIndex: number; cards: CardView[]; slots: (string | null)[];
+  onPick: (id: string) => void; onClear: () => void; onClose: () => void;
+}) {
+  const slot = LINEUP_SLOTS[slotIndex];
+  const current = slots[slotIndex];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Joueurs déjà alignés ailleurs : une même personne ne joue qu'une fois
+  const takenBy: Record<number, number> = {};
+  slots.forEach((id, i) => {
+    const c = id ? cards.find(x => x.id === id) : null;
+    if (c && i !== slotIndex) takenBy[c.player.id] = i;
+  });
+
+  const rows = cards
+    .map(c => ({ c, est: estimate(c.player.season_avg_fantasy, c.rarity, c.player.group, slot), taken: takenBy[c.player.id] }))
+    .sort((a, b) => (a.taken !== undefined ? 1 : 0) - (b.taken !== undefined ? 1 : 0) || b.est - a.est);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center" role="dialog" aria-modal="true" aria-label={`Choisir un ${GROUP_SINGULAR[slot].toLowerCase()}`}>
+      <button type="button" className="absolute inset-0 bg-ink/40" onClick={onClose} aria-label="Fermer" tabIndex={-1} />
+      <div className="relative w-full max-w-[480px] h-[86dvh] flex flex-col rounded-t-3xl bg-paper border-t border-line">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+          <div>
+            <h2 className="font-display text-xl font-bold leading-tight">Choisis ton {GROUP_SINGULAR[slot].toLowerCase()}</h2>
+            <p className="text-sm text-ink2">Classées par points estimés pour cette place.</p>
+          </div>
+          <button type="button" onClick={onClose} autoFocus aria-label="Fermer"
+            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-ink2"><Icon name="close" /></button>
+        </div>
+
+        <ul className="flex-1 overflow-y-auto px-4 pb-6 space-y-2 list-none">
+          {rows.length === 0 && <li className="text-sm text-ink2 py-6 text-center">Tu n’as pas encore de carte. Ouvre tes paquets d’abord.</li>}
+          {rows.map(({ c, est, taken }) => {
+            const disabled = taken !== undefined;
+            const on = c.id === current;
+            const mult = cardMultiplier(c.rarity, c.player.group, slot);
+            return (
+              <li key={c.id}>
+                <button type="button" disabled={disabled} onClick={() => onPick(c.id)} aria-pressed={on}
+                  className={`w-full flex items-center gap-3 rounded-2xl border p-2.5 text-left min-h-[88px] transition-colors ${on ? 'border-brass bg-brand-light' : 'border-line bg-surface'} ${disabled ? 'opacity-55' : 'active:scale-[.99]'}`}>
+                  <div className="w-[64px] shrink-0"><GameCard card={c} fluid /></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-ink truncate">{c.player.name}</p>
+                    <p className="text-sm text-ink mt-0.5">{positionText(c.player.position, c.player.group, slot)}</p>
+                    <p className="text-xs text-ink2 mt-0.5">{rarityText(c.rarity)}</p>
+                    {disabled && <p className="text-xs font-semibold text-ink2 mt-0.5">Déjà dans ton cinq</p>}
+                    {on && <p className="text-xs font-semibold text-brand mt-0.5">Choisie pour cette place</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-display text-xl font-bold leading-none" style={{ fontVariantNumeric: 'lining-nums' }}>{est.toFixed(1).replace('.', ',')}</p>
+                    <p className="text-xs text-ink2 mt-1">pts estimés</p>
+                    <p className="text-xs font-semibold text-ink mt-0.5">{times(mult)}</p>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+          {current && (
+            <li>
+              <button type="button" onClick={onClear} className="w-full min-h-[48px] rounded-xl border border-line-strong bg-surface text-sm font-semibold text-ink2">
+                Laisser cette place vide
+              </button>
+            </li>
+          )}
+        </ul>
+      </div>
     </div>
   );
 }

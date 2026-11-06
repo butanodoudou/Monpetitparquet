@@ -8,6 +8,8 @@ import MyDuelBoard, { type DuelWeek } from '@/components/scoreboard/MyDuelBoard'
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
 import LotteryBanner from '@/components/lottery/LotteryBanner';
+import PackSealed from '@/components/cards/PackSealed';
+import type { Collection } from '@/lib/card-view';
 import { apiFetch } from '@/lib/api-client';
 
 interface League { id: string; name: string; draft_status: string; member_count: number; team_name: string; }
@@ -28,6 +30,8 @@ export default function HomePage() {
   const leagues = useApi<League[]>('/api/leagues', token);
   const matches = useApi<Match[]>('/api/matches?status=scheduled&limit=4', token);
   const duelLeague = leagues?.find(l => l.draft_status === 'completed') ?? null;
+  const collection = useApi<Collection>('/api/collection', token);
+  const closedPacks = collection?.packs.length ?? 0;
   const week = useApi<DuelWeek>(duelLeague ? `/api/leagues/${duelLeague.id}/week` : null, token);
 
   useEffect(() => { if (!token) router.replace('/auth'); }, [token]);
@@ -47,6 +51,23 @@ export default function HomePage() {
       } />
 
       <div className="page-scroll">
+        {/* Paquets fermés : le premier réflexe, avant tout le reste */}
+        {closedPacks > 0 && (
+          <div className="px-4 pt-4">
+            <Link href="/packs" className="flex items-center gap-4 rounded-2xl bg-surface border border-brass p-4 active:scale-[.985] transition-transform"
+              style={{ boxShadow: '0 10px 22px -16px rgba(20,27,38,.7)' }}>
+              <div className="w-[76px] shrink-0"><PackSealed idle label="" /></div>
+              <div className="flex-1 min-w-0">
+                <p className="font-display text-xl font-bold leading-tight text-ink">
+                  {closedPacks > 1 ? `${closedPacks} paquets t’attendent` : 'Un paquet t’attend'}
+                </p>
+                <p className="text-sm text-ink2 mt-0.5">{closedPacks * 5} cartes à découvrir.</p>
+                <span className="mt-2 inline-flex items-center min-h-[44px] px-5 rounded-xl bg-ink text-on-accent text-sm font-semibold border border-brass">Ouvrir mes paquets</span>
+              </div>
+            </Link>
+          </div>
+        )}
+
         {/* Greeting */}
         <div className="px-4 pt-5 pb-1">
           <h2 className="font-display text-3xl font-bold text-ink">Salut {user.username}.</h2>
@@ -122,11 +143,6 @@ export default function HomePage() {
                     <span>·</span>
                     <span>{l.member_count} équipes</span>
                   </div>
-                  {l.draft_status === 'in_progress' && (
-                    <div className="mt-2 bg-brand/10 border border-brand/30 rounded-lg px-3 py-1.5">
-                      <span className="text-brand text-xs font-bold">Le draft a commencé, à toi de jouer</span>
-                    </div>
-                  )}
                 </Link>
               ))}
             </div>

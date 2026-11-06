@@ -30,7 +30,7 @@ export const PLAYERS = [
   player(8, 'Dimitri Roux', 'SIG Strasbourg', 'C', 9.7, 5.2, .8, 4.1),
 ];
 
-const side = (p: ReturnType<typeof person>, score: number) => ({ ...p, weekScore: score, baseScore: score, chemBonus: 4, weekendMult: 1.1, defMultApplied: .94 });
+const side = (p: ReturnType<typeof person>, score: number, starters?: unknown[]) => ({ ...p, weekScore: score, baseScore: score, chemBonus: 4, weekendMult: 1.1, defMultApplied: .94, starters });
 
 export const WEEK = (phase: string, lockInHours: number, scores: [number, number]) => ({
   currentWeek: 8,
@@ -38,7 +38,7 @@ export const WEEK = (phase: string, lockInHours: number, scores: [number, number
   phase,
   lockAt: new Date(Date.now() + lockInHours * 3_600_000).toISOString(),
   matchups: [
-    { id: 'm1', home: side(yanis, scores[0]), away: side(alex, scores[1]), leadingUserId: scores[0] === scores[1] ? null : scores[0] > scores[1] ? ME : ALEX },
+    { id: 'm1', home: side(yanis, scores[0], STARTERS_ME), away: side(alex, scores[1], STARTERS_ALEX), leadingUserId: scores[0] === scores[1] ? null : scores[0] > scores[1] ? ME : ALEX },
     { id: 'm2', home: side(sarah, 74.2), away: side(tom, 68.9), leadingUserId: SARAH },
   ],
   weekScores: { [ME]: scores[0], [ALEX]: scores[1], [SARAH]: 74.2, [TOM]: 68.9 },
@@ -55,29 +55,8 @@ const MEMBERS = [member(yanis, 612.4), member(sarah, 588.1), member(alex, 571.8)
 
 export const LEAGUE = (draft_status: string) => ({
   id: LEAGUE_ID, name: 'Les fans du soleil', invite_code: 'K7PLQ2', draft_status,
-  commissioner_id: ME, picks_per_team: 8, members: MEMBERS,
-  draftPicks: [{ id: 'p1', pick_number: 1, player: PLAYERS[0], user: { username: 'Yanis' } }],
+  commissioner_id: ME, members: MEMBERS,
 });
-
-const auctionPlayer = (p: (typeof PLAYERS)[number], tier: string) => ({ ...p, tier });
-
-export const AUCTION = {
-  isCommissioner: true,
-  myCredits: 342_000,
-  myRemainingSlots: { arriere: 2, sf: 1, grand: 2 },
-  members: [
-    { userId: ME, username: 'Yanis', avatarColor: '#3B82F6', isBot: false, playerCount: 3, credits: 342_000, hasSubmitted: false },
-    { userId: ALEX, username: 'Alex', avatarColor: '#EF4444', isBot: false, playerCount: 3, credits: 298_000, hasSubmitted: true },
-    { userId: SARAH, username: 'Sarah', avatarColor: '#10B981', isBot: false, playerCount: 2, credits: 410_000, hasSubmitted: false },
-  ],
-  currentPack: {
-    id: 'pack1', packNumber: 4, status: 'bidding',
-    players: [auctionPlayer(PLAYERS[0], 'elite'), auctionPlayer(PLAYERS[3], 'star'), auctionPlayer(PLAYERS[7], 'basique')],
-    myBids: {}, submittedUserIds: [ALEX], winners: null,
-    expiresAt: new Date(Date.now() + 7 * 3_600_000).toISOString(),
-  },
-  draftComplete: false,
-};
 
 const lotteryMember = (p: ReturnType<typeof person>, tickets: number, rank: number, odds: number) => ({ ...p, is_bot: false, tickets, rank, odds });
 
@@ -126,6 +105,64 @@ export const MATCHES = [
 
 export const LEAGUES = [{ id: LEAGUE_ID, name: 'Les fans du soleil', draft_status: 'completed', member_count: 4, team_name: 'Pick & Roll Royce' }];
 
-export const TEAM = { players: PLAYERS, totalScore: 612.4 };
-export const STANDINGS = MEMBERS;
-export const LINEUP = { players: PLAYERS, starterIds: [1, 2, 4, 6, 7], currentWeek: 8, isLocked: false, lockAt: new Date(Date.now() + 26 * 3_600_000).toISOString() };
+
+// ─── Cartes ───────────────────────────────────────────────────
+
+// Photo simulée (silhouette), pour contrôler la fenêtre en arche sans réseau
+const PHOTO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='#c9b79c'/><circle cx='50' cy='38' r='17' fill='#584a3a'/><path d='M12 100c2-30 18-40 38-40s36 10 38 40z' fill='#584a3a'/></svg>");
+
+const GROUP: Record<string, 'arriere' | 'sf' | 'grand'> = { PG: 'arriere', SG: 'arriere', SF: 'sf', PF: 'grand', C: 'grand' };
+type Rarity = 'bronze' | 'silver' | 'gold' | 'platine';
+
+export const card = (id: string, playerIndex: number, rarity: Rarity, photo = false) => {
+  const p = PLAYERS[playerIndex];
+  return {
+    id, rarity, obtained_at: new Date(Date.now() - playerIndex * 86_400_000).toISOString(),
+    player: {
+      id: p.id, name: p.name, team: p.team, position: p.position, group: GROUP[p.position],
+      photo_url: photo ? PHOTO : null, jersey_number: p.jersey_number, season_avg_fantasy: p.season_avg_fantasy,
+    },
+  };
+};
+
+export const CARDS = [
+  card('c1', 0, 'platine', true), card('c2', 1, 'gold', true), card('c3', 3, 'silver'), card('c4', 5, 'gold'),
+  card('c5', 6, 'bronze'), card('c6', 2, 'bronze'), card('c7', 4, 'silver'), card('c8', 7, 'bronze'),
+  card('c9', 0, 'bronze'), card('c10', 5, 'silver'),
+];
+
+export const PACKS = [
+  { id: 'pk1', source: 'starter', quality: 'standard' },
+  { id: 'pk2', source: 'starter', quality: 'standard' },
+  { id: 'pk3', source: 'lundi', quality: 'or' },
+];
+
+export const COLLECTION = { coins: 1240, cards: CARDS, packs: PACKS };
+export const COLLECTION_EMPTY = { coins: 0, cards: [], packs: [] };
+
+/** Contenu d'un paquet, volontairement dans le désordre : l'écran doit trier du moins rare au plus rare. */
+export const PACK_CARDS = {
+  cards: [card('n1', 3, 'silver', true), card('n2', 0, 'platine', true), card('n3', 6, 'bronze'), card('n4', 1, 'gold', true), card('n5', 4, 'bronze')],
+};
+export const PACK_CARDS_BRONZE = {
+  cards: [card('b1', 3, 'bronze'), card('b2', 6, 'bronze'), card('b3', 4, 'silver'), card('b4', 7, 'bronze'), card('b5', 2, 'silver')],
+};
+
+const starter = (c: ReturnType<typeof card>, slot: string, mult: number) => ({ card: c, slot, multiplier: mult, points: Math.round(c.player.season_avg_fantasy * mult * 10) / 10 });
+const STARTERS_ME = [starter(CARDS[0], 'arriere', 1.2), starter(CARDS[1], 'arriere', 1.1), starter(CARDS[2], 'sf', 1), starter(CARDS[3], 'grand', 1.1), starter(CARDS[4], 'grand', 0.9)];
+const STARTERS_ALEX = [starter(card('a1', 2, 'silver'), 'arriere', 1), starter(card('a2', 7, 'bronze'), 'arriere', 0.9 * 0.65), starter(card('a3', 4, 'gold'), 'sf', 1.1), starter(card('a4', 5, 'silver'), 'grand', 1), starter(card('a5', 6, 'bronze'), 'grand', 0.9)];
+
+export const STANDINGS = [
+  { ...yanis, wins: 5, losses: 2, draws: 0, points_for: 612.4 },
+  { ...sarah, wins: 4, losses: 2, draws: 1, points_for: 588.1 },
+  { ...alex, wins: 4, losses: 3, draws: 0, points_for: 571.8 },
+  { ...tom, wins: 1, losses: 6, draws: 0, points_for: 433.2 },
+];
+
+export const LINEUP = (locked = false) => ({
+  currentWeek: 8, isLocked: locked,
+  lockAt: new Date(Date.now() + (locked ? -2 : 26) * 3_600_000).toISOString(),
+  cards: CARDS, starterCardIds: ['c1', 'c2', 'c3', 'c4', 'c5'],
+});
+export const LINEUP_EMPTY = { ...LINEUP(), starterCardIds: [] as string[] };
