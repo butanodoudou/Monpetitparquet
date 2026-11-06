@@ -65,9 +65,8 @@ export default function LeaguesPage() {
   };
 
   const statusBadge = (s: string) => {
-    if (s === 'in_progress') return <span className="text-xs bg-brand/20 text-brand font-bold px-2 py-0.5 rounded-full">Draft live</span>;
     if (s === 'completed') return <span className="text-xs bg-green-500/20 text-green-700 font-bold px-2 py-0.5 rounded-full">En saison</span>;
-    return <span className="text-xs bg-raised text-ink2 font-bold px-2 py-0.5 rounded-full">En attente</span>;
+    return <span className="text-xs bg-raised text-ink2 font-bold px-2 py-0.5 rounded-full">Avant le lancement</span>;
   };
 
   return (

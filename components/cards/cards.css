@@ -1,0 +1,244 @@
+/* Matières des cartes (référence : design/cartes-raretes.html).
+   Une seule carte, dimensionnée en container query : le même markup sert en mini, en moyenne et en révélation. */
+
+.gc-wrap { container-type: inline-size; container-name: gc; width: 100%; display: block; }
+
+.gc-tilt {
+  --mx: 30%; --my: 18%; --rx: 0deg; --ry: 0deg;
+  position: relative; transform-style: preserve-3d;
+  transform: perspective(800px) rotateX(var(--rx)) rotateY(var(--ry));
+  transition: transform .25s cubic-bezier(.2, .7, .2, 1); touch-action: pan-y;
+}
+.gc-tilt.live { transition: transform .06s linear; }
+
+.gc {
+  position: relative; aspect-ratio: 5 / 7; width: 100%; border-radius: 7cqw; overflow: hidden; isolation: isolate;
+  color: var(--ink); background: var(--face); box-shadow: var(--shadow); border: var(--border, 1px solid var(--edge));
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+.gc > * { position: absolute; }
+
+.gc-grain {
+  inset: 0; z-index: 0; opacity: var(--grain, .2); mix-blend-mode: multiply; pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.gc-guil { inset: 0; z-index: 0; pointer-events: none; background: var(--guil, none); }
+.gc-rule {
+  z-index: 3; pointer-events: none; inset: var(--rule-in, 3cqw);
+  border-radius: calc(7cqw - var(--rule-in, 3cqw)); border: var(--rule, 0 solid transparent);
+}
+
+.gc-top { z-index: 4; left: 7cqw; right: 7cqw; top: 6cqw; }
+.gc-row1 { display: flex; justify-content: space-between; align-items: center; }
+.gc-tier { font-family: var(--font-display), Georgia, serif; font-style: italic; font-weight: 500; font-size: 7.2cqw; line-height: 1; color: var(--sub); }
+.gc-pips { display: flex; gap: 1.6cqw; }
+.gc-pips i { width: 2.6cqw; height: 2.6cqw; transform: rotate(45deg); border: .5cqw solid var(--pip); background: transparent; display: block; position: static; }
+.gc-pips i.on { background: var(--pip); }
+.gc-row2 { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 2cqw; }
+.gc-score {
+  font-family: var(--font-display), Georgia, serif; font-weight: 700; font-size: 19cqw; line-height: .9; letter-spacing: -.02em;
+  font-variant-numeric: lining-nums; color: var(--ink); text-shadow: var(--emboss, none);
+}
+.gc-scorelbl { display: block; font-size: 5.6cqw; font-weight: 500; color: var(--sub); margin-top: 1.4cqw; }
+.gc-pos {
+  font-size: 6cqw; font-weight: 600; padding: 1.2cqw 3cqw; border-radius: 9cqw; border: 1px solid var(--pill-b);
+  background: var(--pill); color: var(--ink); margin-top: .5cqw; white-space: nowrap;
+}
+
+.gc-win {
+  z-index: 2; left: 50%; transform: translateX(-50%); top: 33%; width: 62%; height: 39%;
+  border-radius: 30cqw 30cqw 3cqw 3cqw; overflow: hidden; background: var(--win); box-shadow: var(--win-sh);
+}
+.gc-win img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 12%; filter: saturate(.85) contrast(1.02); }
+.gc-win .fade { position: absolute; inset: 0; background: linear-gradient(to top, var(--face-end) 0, transparent 38%); pointer-events: none; }
+.gc-win .tint { position: absolute; inset: 0; background: var(--wtint); mix-blend-mode: multiply; pointer-events: none; }
+.gc-nophoto { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+.gc-nophoto b { font-family: var(--font-display), Georgia, serif; font-weight: 700; font-size: 30cqw; line-height: 1; color: var(--sil); opacity: .9; }
+.gc-nophoto span { font-size: 5.4cqw; color: var(--sub); margin-top: 1cqw; font-weight: 500; }
+
+.gc-foot { z-index: 4; left: 7cqw; right: 7cqw; bottom: 6cqw; }
+.gc-name {
+  font-family: var(--font-display), Georgia, serif; font-weight: 700; font-size: 9cqw; line-height: 1.05;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink);
+}
+.gc-club { font-size: 6.2cqw; font-weight: 500; color: var(--sub); margin-top: 1.4cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.gc-sheen {
+  inset: 0; z-index: 6; pointer-events: none; opacity: 0; transition: opacity .3s; mix-blend-mode: soft-light;
+  background: radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.95), rgba(255,255,255,0) 46%);
+}
+.gc-tilt.live .gc-sheen { opacity: var(--sheen, .55); }
+.gc-pearl {
+  inset: 0; z-index: 5; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+  background: linear-gradient(115deg, #ffc9ea 0%, #b8e4ff 25%, #d9c9ff 50%, #ffe6b8 75%, #ffc9ea 100%);
+  background-size: 260% 100%; background-position: var(--mx) 0;
+}
+
+/* Bronze : papier mat grainé et cuivre, filet simple, aucun reflet */
+.t-bronze {
+  --face: linear-gradient(165deg, #F2E6DA, #E6D3C1); --face-end: #E9D8C8; --edge: #B58A66; --ink: #35210F; --sub: #6B4A31; --hair: rgba(107,74,49,.28);
+  --pip: #9A6238; --pill: rgba(255,255,255,.45); --pill-b: rgba(107,74,49,.3); --grain: .5;
+  --win: radial-gradient(circle at 50% 30%, #DCC3AB, #C8A78C); --win-sh: inset 0 2px 5px rgba(60,35,15,.28), inset 0 -1px 0 rgba(255,255,255,.5); --wtint: rgba(181,138,102,.28); --sil: #7A4F2E;
+  --shadow: 0 1px 2px rgba(60,35,15,.14), 0 8px 14px -10px rgba(60,35,15,.35); --sheen: 0;
+}
+/* Silver : métal brossé, filet et liseré blanc */
+.t-silver {
+  --face: repeating-linear-gradient(90deg, rgba(255,255,255,.38) 0 1px, rgba(255,255,255,0) 1px 3px), linear-gradient(145deg, #F5F7F9, #D5DBE1 55%, #EBEEF1);
+  --face-end: #DDE2E7; --edge: #8A97A4; --ink: #17202A; --sub: #465260; --hair: rgba(70,82,96,.3);
+  --pip: #5E6C7B; --pill: rgba(255,255,255,.6); --pill-b: rgba(70,82,96,.3); --grain: .15; --rule: 1px solid rgba(255,255,255,.85); --rule-in: 0px;
+  --win: linear-gradient(180deg, #C9D1D9, #AEB8C2); --win-sh: inset 0 2px 4px rgba(23,32,42,.25), 0 1px 0 rgba(255,255,255,.9); --wtint: rgba(120,135,150,.25); --sil: #4A5766;
+  --shadow: 0 1px 2px rgba(23,32,42,.14), 0 10px 18px -12px rgba(23,32,42,.45); --sheen: .6;
+}
+/* Gold : feuille d'or satinée, guillochis, double filet */
+.t-gold {
+  --face: linear-gradient(150deg, #FAF0CF 0%, #EDD28A 48%, #F6E6B0 100%); --face-end: #EFD995; --edge: #B8892B; --ink: #3F2B03; --sub: #654508; --hair: rgba(101,69,8,.3);
+  --pip: #9A6D0F; --pill: rgba(255,250,230,.6); --pill-b: rgba(101,69,8,.35); --grain: .25; --emboss: 0 1px 0 rgba(255,255,255,.75), 0 -1px 0 rgba(101,69,8,.18);
+  --guil: repeating-linear-gradient(45deg, rgba(120,80,0,.07) 0 1px, transparent 1px 5px), repeating-linear-gradient(-45deg, rgba(120,80,0,.07) 0 1px, transparent 1px 5px);
+  --rule: 1px solid rgba(154,109,15,.7); --rule-in: 2.6cqw;
+  --win: radial-gradient(circle at 50% 28%, #F4E2A6, #D9B867); --win-sh: inset 0 2px 5px rgba(101,69,8,.35), 0 1px 0 rgba(255,255,255,.7); --wtint: rgba(184,137,43,.3); --sil: #7A5410;
+  --shadow: 0 1px 2px rgba(101,69,8,.2), 0 12px 20px -12px rgba(101,69,8,.5); --sheen: .75;
+}
+/* Platine : fond encre, bordure nacrée. Seule carte sombre, seule carte avec halo */
+.t-platine {
+  --face: linear-gradient(160deg, #1C2142, #10131F 70%); --face-end: #121626; --edge: transparent; --ink: #F4F2FB; --sub: #BDBADB; --hair: rgba(233,224,255,.25);
+  --pip: #E6DEFF; --pill: rgba(255,255,255,.08); --pill-b: rgba(233,224,255,.4); --grain: .08;
+  --guil: repeating-radial-gradient(circle at 50% 40%, rgba(233,224,255,.06) 0 1px, transparent 1px 7px);
+  --rule: 1px solid rgba(233,224,255,.22); --rule-in: 2.6cqw;
+  --win: radial-gradient(circle at 50% 25%, #3A3F72, #1A1E3A); --win-sh: inset 0 2px 8px rgba(0,0,0,.55), 0 0 0 1px rgba(233,224,255,.25); --wtint: rgba(120,100,220,.18); --sil: #C9C0F5;
+  --border: 1.6px solid transparent;
+  --shadow: 0 2px 4px rgba(20,27,38,.25), 0 16px 28px -14px rgba(91,63,166,.7); --sheen: .9;
+}
+.t-platine.gc {
+  background: linear-gradient(160deg, #1C2142, #10131F 70%) padding-box,
+    conic-gradient(from 210deg, #E9E0FF, #B9E6FF, #FFD9EC, #E1E8FF, #F3E7FF, #E9E0FF) border-box;
+}
+.t-platine .gc-pearl { opacity: .06; transition: opacity .3s; }
+.gc-tilt.live .t-platine .gc-pearl { opacity: .32; }
+
+/* Petite carte : on garde la moyenne, la photo, le nom et la jauge */
+@container gc (max-width: 150px) {
+  .gc-tier, .gc-scorelbl, .gc-club, .gc-pos { display: none; }
+  .gc-top { top: 7cqw; }
+  .gc-score { font-size: 25cqw; }
+  .gc-name { font-size: 11.5cqw; }
+  .gc-pips i { width: 3.4cqw; height: 3.4cqw; }
+  .gc-win { top: 35%; height: 36%; }
+  .gc-nophoto span { display: none; }
+}
+/* Vignette : le nom disparaît, la moyenne et la photo restent lisibles */
+@container gc (max-width: 76px) {
+  .gc-name { display: none; }
+  .gc-win { top: 36%; height: 50%; }
+  .gc-score { font-size: 28cqw; }
+  .gc-pips { gap: 2cqw; }
+  .gc-pips i { width: 4.4cqw; height: 4.4cqw; }
+}
+
+/* Dos de carte : neutre, il ne trahit pas la rareté */
+.gc-back {
+  background: linear-gradient(160deg, #1E2638, #121823); border: 1px solid #2C3648; color: #E8D7AE;
+  --shadow: 0 2px 4px rgba(20,27,38,.2), 0 14px 24px -14px rgba(20,27,38,.55);
+}
+.gc-back .ring {
+  inset: 0; display: flex; align-items: center; justify-content: center;
+  background: repeating-radial-gradient(circle at 50% 50%, rgba(214,176,98,.14) 0 1px, transparent 1px 6px);
+}
+.gc-back .mono {
+  position: relative; width: 34cqw; height: 34cqw; border-radius: 50%; border: 1px solid rgba(214,176,98,.7);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display), Georgia, serif; font-weight: 700; font-size: 11cqw; color: #E3C887; background: #161D2C;
+  box-shadow: 0 0 0 2.4cqw #161D2C, 0 0 0 2.9cqw rgba(214,176,98,.4);
+}
+
+/* Emplacement vide */
+.gc-empty {
+  aspect-ratio: 5 / 7; width: 100%; border-radius: 7cqw; border: 1.5px dashed #8E9AAB; background: rgba(255,255,255,.6);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2cqw; color: #455062;
+}
+
+/* ============ Révélation ============ */
+.reveal-stage { position: relative; perspective: 1000px; display: flex; justify-content: center; padding: 20px 0 14px; }
+.reveal-stage::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 42%, #FFFFFF 0, rgba(242,244,247,0) 66%);
+}
+.flipwrap { position: relative; perspective: 1000px; width: min(62vw, 252px); }
+.flip { position: relative; transform-style: preserve-3d; transition: transform .8s cubic-bezier(.2, .7, .2, 1); aspect-ratio: 5 / 7; width: 100%; }
+.flip.flipped { transform: rotateY(180deg); }
+.flip > .face, .flip > .back { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip > .face { transform: rotateY(180deg); }
+.flip-enter { animation: flip-enter .5s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes flip-enter { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
+
+.halo {
+  position: absolute; inset: -16% -26%; z-index: -1; pointer-events: none; opacity: 0; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(110,80,210,.38), rgba(110,80,210,0) 70%);
+}
+.halo.on { animation: halo 2.4s ease-out forwards; }
+@keyframes halo { 0% { opacity: 0; transform: scale(.7); } 35% { opacity: 1; transform: scale(1.05); } 100% { opacity: .5; transform: scale(1); } }
+.glint { position: absolute; inset: 0; z-index: 7; pointer-events: none; border-radius: 7cqw; overflow: hidden; }
+.glint::after {
+  content: ''; position: absolute; top: -10%; bottom: -10%; width: 45%; background: linear-gradient(105deg, transparent, rgba(255,255,255,.7), transparent);
+  transform: translateX(-130%) skewX(-12deg); animation: glint 1.3s .7s cubic-bezier(.2, .7, .2, 1) forwards;
+}
+@keyframes glint { to { transform: translateX(330%) skewX(-12deg); } }
+.announce { opacity: 0; transform: translateY(6px); transition: opacity .5s .6s, transform .5s .6s; }
+.announce.on { opacity: 1; transform: none; }
+
+/* Paquet scellé */
+.pack-wrap { container-type: inline-size; width: 100%; }
+.pack {
+  position: relative; width: 100%; aspect-ratio: 3 / 4.1; border-radius: 4cqw; overflow: hidden; isolation: isolate;
+  background: linear-gradient(150deg, #2C3749 0%, #141B26 44%, #232D3E 60%, #10151F 100%); border: 1px solid #B07A1E;
+  box-shadow: 0 2px 4px rgba(20,27,38,.25), 0 22px 30px -18px rgba(20,27,38,.7);
+}
+.pack .band { position: absolute; left: 0; right: 0; top: 17%; height: 3.4cqw; background: #B07A1E; z-index: 2; }
+.pack .crimp { position: absolute; left: 0; right: 0; top: 0; height: 17%; z-index: 1; background: repeating-linear-gradient(90deg, rgba(255,255,255,.1) 0 1px, transparent 1px 3cqw), linear-gradient(#2A3547, #1A2230); }
+.pack .mark { position: absolute; inset: 24% 0 8% 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6cqw; }
+.pack .mono {
+  width: 36cqw; height: 36cqw; border-radius: 50%; border: 1px solid rgba(214,176,98,.7); display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display), Georgia, serif; font-weight: 700; font-size: 12cqw; color: #E3C887; background: #161D2C;
+  box-shadow: 0 0 0 2.6cqw #161D2C, 0 0 0 3.1cqw rgba(214,176,98,.4);
+}
+.pack .cap { font-family: var(--font-display), Georgia, serif; font-style: italic; font-size: 7cqw; color: #D8C79A; }
+.pack .rings { position: absolute; inset: 0; z-index: 0; background: repeating-radial-gradient(circle at 50% 56%, rgba(214,176,98,.07) 0 1px, transparent 1px 8px); }
+.pack .shine { position: absolute; inset: 0; z-index: 3; pointer-events: none; background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.14) 50%, transparent 60%); transform: translateX(-120%); animation: shine 3.6s 1s ease-in-out infinite; }
+@keyframes shine { 0%, 55% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+.pack-tearing .crimp, .pack-tearing .band { animation: tear-top .7s cubic-bezier(.5, 0, .9, .4) forwards; }
+.pack-tearing .mark, .pack-tearing .rings { animation: tear-body .7s .15s ease-in forwards; }
+@keyframes tear-top { to { transform: translate(24%, -90%) rotate(14deg); opacity: 0; } }
+@keyframes tear-body { to { transform: scale(1.12); opacity: 0; } }
+.pack-flash { position: absolute; inset: -20%; z-index: 4; pointer-events: none; opacity: 0; background: radial-gradient(circle, #fff 0, #F3E7CC 28%, transparent 62%); }
+.pack-tearing .pack-flash { animation: flash .7s ease-out forwards; }
+@keyframes flash { 0%, 40% { opacity: 0; } 60% { opacity: .95; } 100% { opacity: 0; } }
+.pack-idle { animation: pack-sway 2.8s ease-in-out infinite; transform-origin: 50% 90%; }
+@keyframes pack-sway { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-1.4deg); } 75% { transform: rotate(1.4deg); } }
+
+/* Chargement */
+.gc-skel {
+  aspect-ratio: 5 / 7; border-radius: 14px; border: 1px solid #DDE2E9;
+  background: linear-gradient(100deg, #E7EBF0 30%, #F6F8FA 50%, #E7EBF0 70%); background-size: 220% 100%; animation: gc-shim 1.5s linear infinite;
+}
+@keyframes gc-shim { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* Cinq : demi-terrain */
+.court { position: relative; border-radius: 22px; background: #E9EDF2; border: 1px solid #C2CAD5; overflow: hidden; }
+.court i { position: absolute; display: block; pointer-events: none; border: 1.5px solid #AEB8C6; }
+.court .c-key { left: 32%; right: 32%; bottom: -2px; height: 36%; border-bottom: 0; }
+.court .c-ft { left: 38%; right: 38%; bottom: 34%; aspect-ratio: 1; border-radius: 50%; }
+.court .c-three { left: 6%; right: 6%; bottom: -2px; height: 76%; border-radius: 50% 50% 0 0 / 40% 40% 0 0; border-bottom: 0; }
+.court .c-rim { left: 50%; bottom: 7%; width: 7%; aspect-ratio: 1; margin-left: -3.5%; border-radius: 50%; border-color: #B07A1E; }
+.court .c-mid { left: 38%; right: 38%; top: -1.5px; aspect-ratio: 2 / 1; border-radius: 0 0 999px 999px; border-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gc-tilt, .flip, .flip > .face, .flip > .back, .pack *, .pack-idle, .flip-enter, .halo, .glint::after, .announce { animation: none !important; transition: none !important; }
+  .gc-tilt { transform: none !important; }
+  .flip { transform: none !important; }
+  .flip > .face, .flip > .back { transform: none !important; transition: opacity .3s !important; }
+  .flip > .face { opacity: 0; }
+  .flip.flipped > .face { opacity: 1; }
+  .flip.flipped > .back { opacity: 0; }
+  .halo.on { opacity: .5; }
+  .announce { opacity: 1; transform: none; }
+  .glint { display: none; }
+}

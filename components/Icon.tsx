@@ -5,6 +5,11 @@ const PATHS = {
   trophy: <><path d="M8 4h8v6a4 4 0 0 1-8 0V4Z" /><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4" /><path d="M12 14v3M9 20h6M10 20l.5-3h3l.5 3" /></>,
   ball: <><circle cx="12" cy="12" r="8" /><path d="M4 12h16M12 4v16" /><path d="M6.4 6.4a8 8 0 0 1 0 11.2M17.6 6.4a8 8 0 0 0 0 11.2" /></>,
   back: <path d="M15 5l-7 7 7 7" />,
+  cards: <><rect x="4" y="6.5" width="10" height="13" rx="2" transform="rotate(-8 9 13)" /><rect x="10" y="4.5" width="10" height="13" rx="2" /><path d="M15 9.5l1.4 1.4-1.4 1.4-1.4-1.4Z" /></>,
+  coin: <><circle cx="12" cy="12" r="8" /><path d="M9.5 15V9h3a1.8 1.8 0 0 1 0 3.6h-3" /></>,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  lock: <><rect x="6" y="11" width="12" height="8.5" rx="2" /><path d="M9 11V8.5a3 3 0 0 1 6 0V11" /></>,
 } as const;
 
 export type IconName = keyof typeof PATHS;
