@@ -12,11 +12,14 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  email TEXT UNIQUE,
+  password_hash TEXT,
   avatar_color TEXT NOT NULL DEFAULT '#F59E0B',
+  login_version INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username));
 
 -- -------------------------------------------------------
 -- Clubs de LNB Élite, ex Betclic Élite (from Sofascore).

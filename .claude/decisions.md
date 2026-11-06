@@ -482,3 +482,34 @@ Points clés :
 **Alternatives écartées** : garder aussi un mode sombre (deux thèmes à finir) ; garder l'ambre `#F59E0B` (illisible en texte sur fond clair).
 
 **Raison** : sur fond clair, le glow ne fonctionne plus. Les matières donnent un aspect d'objet de collection, et la rareté reste lisible sans la couleur.
+
+---
+
+## [veto possible] Connexion par pseudo et lien personnel (2026-11-06)
+
+**Contexte** : l'utilisateur a demandé de jouer la beta sans mot de passe. Il fallait éviter une page « mot de passe oublié », donc un service d'e-mail et un domaine, sans permettre à n'importe qui de prendre un pseudo.
+
+**Décision** :
+- Inscription par pseudo seul (3 à 20 caractères), unique sans tenir compte de la casse.
+- Lien personnel `/auth#lien=<userId>.<version>.<signature>`, signé avec HMAC et non stocké. Il se réaffiche sur l'accueil.
+- Le jeton reste dans le fragment de l'URL, qui n'atteint ni le serveur ni les logs.
+- Le commissaire génère un nouveau lien pour un membre, ce qui annule l'ancien (`users.login_version`).
+- Session JWT de 365 jours.
+
+**Alternatives écartées** : pseudo seul (usurpation immédiate) ; e-mail et mot de passe (oublis à gérer, service d'e-mail et domaine) ; lien magique par e-mail (mêmes dépendances) ; jeton aléatoire stocké haché (impossible à réafficher).
+
+**Raison** : le moins de friction possible pour des amis, sans dépendance nouvelle.
+
+**Limites connues** : annuler un lien ne ferme pas une session déjà ouverte, le JWT reste valable. Le commissaire qui perd son lien doit passer par une réinitialisation à la main. Un e-mail restera à ajouter si le jeu sort du cercle d'amis.
+
+---
+
+## Outillage design et test (2026-11-06)
+
+**Décision** :
+- Skill **Impeccable** (pbakaus, Apache 2.0) dans `.claude/skills/impeccable`. Seuls les fichiers texte sont installés, sans scripts, relus et scannés avant installation.
+- Agent `testeur` et tests Playwright dans `e2e/`, sur le Chrome de la machine, sans écriture en base ni appel aux crons.
+
+**Alternatives écartées** : Taste Skill (orienté sites vitrine) ; `npx impeccable install` (exécute du code tiers et ajoute un détecteur à chaque édition) ; agents officiels Playwright (trois agents et un serveur MCP en plus, pour une petite app).
+
+**Raison** : Impeccable sait reprendre une interface existante, ce qui est notre cas, et Playwright donne le vrai rendu mobile que `chrome --headless` fausse à 500 px.

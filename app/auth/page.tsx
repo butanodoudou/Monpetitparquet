@@ -1,15 +1,24 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/authStore';
+import { useAuthStore, type AuthUser } from '@/store/authStore';
+import { extractLoginToken, loginUrl } from '@/lib/login-link';
+import LoginLinkBox from '@/components/LoginLinkBox';
+import ManagerCard from '@/components/auth/ManagerCard';
+
+interface Invite { leagueName: string; commissioner: string | null; memberCount: number }
 
 export default function AuthPage() {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [mode, setMode] = useState<'register' | 'link'>('register');
+  const [username, setUsername] = useState('');
+  const [pasted, setPasted] = useState('');
+  const [newLink, setNewLink] = useState('');
+  const [invite, setInvite] = useState<Invite | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { token, setAuth } = useAuthStore();
   const router = useRouter();
+  const linking = useRef(false);
 
   // Retour vers la page d'origine (ex. lien d'invitation) : chemin interne uniquement
   const nextUrl = () => {
@@ -17,65 +26,143 @@ export default function AuthPage() {
     return next && next.startsWith('/') && !next.startsWith('//') ? next : '/home';
   };
 
-  useEffect(() => { if (token) router.replace(nextUrl()); }, [token]);
+  const loginWith = async (loginToken: string) => {
+    setError(''); setLoading(true);
+    try {
+      const res = await fetch('/api/auth/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loginToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); setMode('link'); return; }
+      setAuth(data.token, data.user as AuthUser);
+      router.replace(nextUrl());
+    } catch { setError('Erreur réseau, réessaie dans un instant.'); }
+    finally { setLoading(false); linking.current = false; }
+  };
 
-  const submit = async (e: React.FormEvent) => {
+  // Ouverture d'un lien personnel : il prime sur une session déjà ouverte
+  useEffect(() => {
+    const fromUrl = extractLoginToken(window.location.hash);
+    if (!fromUrl) return;
+    linking.current = true;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    loginWith(fromUrl);
+  }, []);
+
+  useEffect(() => {
+    if (token && !linking.current && !newLink) router.replace(nextUrl());
+  }, [token, newLink]);
+
+  // Arrivée par une invitation : on dit qui invite et dans quelle ligue
+  useEffect(() => {
+    const code = new URLSearchParams(nextUrl().split('?')[1] ?? '').get('join');
+    if (!code) return;
+    fetch(`/api/leagues/invite/${encodeURIComponent(code)}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (data) setInvite(data); })
+      .catch(() => { /* sans aperçu, l'accueil standard reste valable */ });
+  }, []);
+
+  const register = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
-      const res = await fetch(`/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'login' ? { email: form.email, password: form.password } : form),
+        body: JSON.stringify({ username }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
-      setAuth(data.token, data.user);
-      router.replace(nextUrl());
-    } catch { setError('Erreur réseau'); }
+      // Le lien s'affiche avant la redirection : c'est le seul moyen de revenir sur ce compte
+      setNewLink(loginUrl(data.loginToken));
+      setAuth(data.token, data.user as AuthUser);
+    } catch { setError('Erreur réseau, réessaie dans un instant.'); }
     finally { setLoading(false); }
   };
 
-  return (
-    <div className="flex flex-col min-h-dvh bg-slate-900">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-8">
-        <div className="mb-8 text-center">
-          <div className="text-7xl mb-4">🏀</div>
-          <h1 className="text-3xl font-black text-slate-100 tracking-tight">
-            Mon Petit<br /><span className="text-brand">Parquet</span>
-          </h1>
-          <p className="text-slate-400 text-sm mt-2">Fantasy LNB Élite entre amis</p>
+  const submitLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    const found = extractLoginToken(pasted);
+    if (!found) { setError('Ce texte ne contient pas de lien personnel.'); return; }
+    linking.current = true;
+    loginWith(found);
+  };
+
+  if (newLink) {
+    return (
+      <main className="auth-page">
+        <ManagerCard name={username} />
+        <div className="auth-copy">
+          <h1 className="auth-title">Bienvenue sur le parquet, {username.trim()}.</h1>
+          <p className="auth-sub">
+            Pas de mot de passe ici. Ce lien te ramène sur ton compte depuis un autre appareil : garde-le pour toi, dans tes notes par exemple.
+          </p>
         </div>
-
-        <div className="flex bg-slate-800 rounded-xl p-1 mb-6 w-full max-w-xs">
-          {(['login', 'register'] as const).map(m => (
-            <button key={m} onClick={() => { setMode(m); setError(''); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${mode === m ? 'bg-brand text-slate-900' : 'text-slate-400'}`}>
-              {m === 'login' ? 'Connexion' : 'Inscription'}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={submit} className="w-full max-w-xs space-y-3">
-          {mode === 'register' && (
-            <input className="input-field" placeholder="Pseudo" value={form.username}
-              onChange={e => setForm(f => ({ ...f, username: e.target.value }))} autoComplete="username" />
-          )}
-          <input className="input-field" type="email" placeholder="Email" value={form.email}
-            onChange={e => setForm(f => ({ ...f, email: e.target.value }))} autoComplete="email" />
-          <input className="input-field" type="password" placeholder="Mot de passe" value={form.password}
-            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
-          )}
-          <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? '…' : mode === 'login' ? 'Se connecter' : 'Créer un compte'}
+        <div className="auth-form">
+          <LoginLinkBox link={newLink} shareText="Mon lien Mon Petit Parquet, à garder pour moi" />
+          <button type="button" className="btn-primary" onClick={() => router.replace(nextUrl())}>
+            {invite ? `Rejoindre ${invite.leagueName}` : "C'est bon, je l'ai gardé"}
           </button>
-        </form>
+          <p className="auth-foot">Tu le retrouveras aussi sur l&apos;accueil de l&apos;app.</p>
+        </div>
+      </main>
+    );
+  }
+
+  const others = invite ? invite.memberCount - 1 : 0;
+
+  return (
+    <main className="auth-page">
+      <ManagerCard name={mode === 'register' ? username : ''} />
+
+      <div className="auth-copy">
+        {invite ? (
+          <>
+            <h1 className="auth-title">
+              {invite.commissioner ? `${invite.commissioner} t'a gardé une place.` : 'Une place t’attend.'}
+            </h1>
+            <p className="auth-sub">
+              {others > 0
+                ? `Dans « ${invite.leagueName} », ${others} ${others > 1 ? 'autres managers sont déjà là' : 'autre manager est déjà là'}. Il ne manque plus que toi.`
+                : `Choisis ton nom de manager et rejoins « ${invite.leagueName} ».`}
+            </p>
+          </>
+        ) : mode === 'register' ? (
+          <>
+            <h1 className="auth-title">Ton équipe, tes potes, la LNB Élite.</h1>
+            <p className="auth-sub">Drafte tes joueurs, défie tes amis chaque week-end et tente ta chance à la loterie du lundi.</p>
+          </>
+        ) : (
+          <>
+            <h1 className="auth-title">Content de te revoir.</h1>
+            <p className="auth-sub">Colle le lien personnel que tu as gardé à ton inscription.</p>
+          </>
+        )}
       </div>
-      <div className="pb-8 text-center text-xs text-slate-600">LNB Élite Fantasy · Saison 2026-27</div>
-    </div>
+
+      <form onSubmit={mode === 'register' ? register : submitLink} className="auth-form">
+        {mode === 'register' ? (
+          <input className="input-field" placeholder="Ton nom de manager" aria-label="Ton nom de manager" value={username}
+            maxLength={20} onChange={e => setUsername(e.target.value)} autoComplete="nickname" />
+        ) : (
+          <input className="input-field" placeholder="Ton lien personnel" aria-label="Ton lien personnel" value={pasted}
+            onChange={e => setPasted(e.target.value)} autoComplete="off" />
+        )}
+
+        {error && <div className="auth-error" role="alert">{error}</div>}
+
+        <button type="submit" className="btn-primary" disabled={loading}>
+          {loading ? '…' : mode === 'register' ? 'Entrer sur le parquet' : 'Me reconnecter'}
+        </button>
+
+        <button type="button" className="auth-switch"
+          onClick={() => { setMode(mode === 'register' ? 'link' : 'register'); setError(''); }}>
+          {mode === 'register' ? "J'ai déjà un compte" : 'Je suis nouveau'}
+        </button>
+      </form>
+    </main>
   );
 }

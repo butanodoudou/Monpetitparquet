@@ -1,0 +1,247 @@
+.auth-light {
+  --paper: #F2F4F7;
+  --surface: #FFFFFF;
+  --ink: #141B26;
+  --ink2: #455062;
+  --muted: #5B6678;
+  --line: #DDE2E9;
+  --brass: #B07A1E;
+  --brassink: #7E5409;
+  --brass-soft: #F3E7CC;
+
+  min-height: 100dvh;
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(90% 46% at 50% 0%, #FFFFFF 0%, rgba(255, 255, 255, 0) 100%),
+    var(--paper);
+}
+
+.auth-page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 16px 24px;
+}
+
+.auth-light ::selection { background: var(--brass-soft); color: var(--ink); }
+.auth-light input { caret-color: var(--brassink); }
+.auth-light :focus-visible { outline: 2px solid var(--brassink); outline-offset: 2px; }
+
+.auth-title {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1.08;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.auth-sub {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink2);
+  text-wrap: pretty;
+}
+
+.auth-copy { width: 100%; text-align: center; display: grid; gap: 8px; }
+.auth-form { width: 100%; display: grid; gap: 12px; }
+.auth-foot { font-size: 12px; color: var(--muted); text-align: center; }
+
+.auth-switch {
+  justify-self: center;
+  padding: 8px 4px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--brassink);
+  text-decoration: underline;
+  text-decoration-color: rgba(126, 84, 9, .35);
+  text-underline-offset: 4px;
+}
+
+.auth-error {
+  border: 1px solid #E9C2C2;
+  background: #FBEFEF;
+  color: #8E2424;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.auth-light .input-field {
+  width: 100%;
+  height: 54px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+  box-shadow: 0 1px 2px rgba(20, 27, 38, .05);
+}
+
+.auth-light .input-field::placeholder { color: var(--muted); }
+
+.auth-light .input-field:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-soft);
+}
+
+.auth-light .btn-primary {
+  width: 100%;
+  height: 54px;
+  border-radius: 14px;
+  border: 1px solid var(--brass);
+  background: var(--ink);
+  color: #FFFFFF;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 18px -12px rgba(20, 27, 38, .7);
+  transition: transform .15s ease-out;
+}
+
+.auth-light .btn-primary:active { transform: scale(.985); }
+.auth-light .btn-primary:disabled { opacity: .6; }
+
+.auth-light .btn-secondary {
+  width: 100%;
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ─── Carte de manager ───────────────────────────────── */
+
+.mc-stage {
+  position: relative;
+  width: min(46vw, 176px);
+  aspect-ratio: 5 / 7;
+  margin-top: 6px;
+  container-type: inline-size;
+}
+
+.mc-back {
+  position: absolute;
+  inset: 0;
+  border-radius: 7cqw;
+  transform-origin: 50% 100%;
+}
+
+.mc-back-silver {
+  transform: rotate(-11deg) translateX(-13cqw);
+  border: 1px solid #8D99A6;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .38) 0 1px, rgba(255, 255, 255, 0) 1px 3px),
+    linear-gradient(160deg, #E8ECF0, #CBD3DB);
+  box-shadow: 0 10px 18px -12px rgba(23, 32, 42, .45);
+}
+
+.mc-back-elite {
+  transform: rotate(11deg) translateX(13cqw);
+  background:
+    repeating-radial-gradient(circle at 50% 40%, rgba(233, 224, 255, .06) 0 1px, transparent 1px 7px),
+    linear-gradient(160deg, #1C2142, #10131F 70%);
+  box-shadow: 0 10px 22px -12px rgba(91, 63, 166, .55);
+}
+
+.mc {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 9cqw 8cqw 8cqw;
+  border-radius: 7cqw;
+  border: 1px solid #B8892B;
+  color: #3B2906;
+  background:
+    repeating-linear-gradient(45deg, rgba(120, 80, 0, .07) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(-45deg, rgba(120, 80, 0, .05) 0 1px, transparent 1px 5px),
+    linear-gradient(150deg, #FAF0CF 0%, #EDD28A 48%, #F6E6B0 100%);
+  box-shadow: 0 1px 2px rgba(101, 69, 8, .2), 0 18px 28px -16px rgba(101, 69, 8, .6);
+  animation: mc-rise .6s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.mc::after {
+  content: '';
+  position: absolute;
+  inset: 2.6cqw;
+  z-index: 2;
+  border: 1px solid rgba(154, 109, 15, .7);
+  border-radius: 4.6cqw;
+  pointer-events: none;
+}
+
+.mc-role {
+  font-family: var(--font-display), Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 7cqw;
+  color: #6B4A08;
+}
+
+.mc-window {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58cqw;
+  height: 62cqw;
+  margin-top: 5cqw;
+  border-radius: 29cqw 29cqw 5cqw 5cqw;
+  background: radial-gradient(circle at 50% 28%, #F4E2A6, #D9B867);
+  box-shadow: inset 0 2px 5px rgba(101, 69, 8, .35), 0 1px 0 rgba(255, 255, 255, .6);
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 700;
+  font-size: 34cqw;
+  line-height: 1;
+  color: #5A3E08;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .55);
+}
+
+.mc-name {
+  width: 100%;
+  margin-top: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+}
+
+.mc-name-empty { font-style: italic; font-weight: 500; color: #7A5A1A; }
+
+.mc-season { margin-top: 1.5cqw; font-size: 5.4cqw; font-weight: 500; color: #6B4A08; }
+
+@keyframes mc-rise {
+  from { opacity: 0; transform: translateY(10px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-height: 640px) {
+  .auth-page { gap: 12px; padding-top: 12px; padding-bottom: 12px; }
+  .mc-stage { width: 112px; }
+  .auth-title { font-size: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc { animation: none; }
+  .auth-light .btn-primary { transition: none; }
+}

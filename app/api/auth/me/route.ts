@@ -8,10 +8,10 @@ export async function GET(req: NextRequest) {
 
   const { data } = await db()
     .from('users')
-    .select('id, username, email, avatar_color')
+    .select('id, username, avatar_color')
     .eq('id', auth.userId)
     .single();
 
   if (!data) return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 });
-  return NextResponse.json({ id: data.id, username: data.username, email: data.email, avatarColor: data.avatar_color });
+  return NextResponse.json({ id: data.id, username: data.username, avatarColor: data.avatar_color });
 }

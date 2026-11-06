@@ -91,3 +91,5 @@ CRON_SECRET
 - Calendrier des duels : `createLeagueSchedule`, à partir de la prochaine journée jouable.
 - Direction visuelle validée : clair et haut de gamme, maquette `design/cartes-raretes.html`. L'app reste sombre tant que le thème n'est pas intégré. Les sections « Patterns UI » de `design.md` décrivent encore l'ancien thème.
 - `.claude/settings.local.json` contient une ancienne clé en clair : ne pas le commiter.
+- Connexion par pseudo et lien personnel : migration `2026-11-06_login-link.sql` à appliquer AVANT de déployer ce code.
+- Agents : `designer` refondu sur `PRODUCT.md` et `DESIGN.md`, nouvel agent `testeur`. Tests navigateur : `npm run test:e2e`.

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
+import MyLoginLink from '@/components/MyLoginLink';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
 import ScoringGrid from '@/components/ScoringGrid';
@@ -136,6 +137,7 @@ export default function HomePage() {
           </div>
           <ScoringGrid />
         </div>
+        <div className="px-4 pb-4"><MyLoginLink /></div>
       </div>
 
       <BottomNav />

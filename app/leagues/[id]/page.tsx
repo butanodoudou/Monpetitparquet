@@ -8,6 +8,8 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
 import LotteryBanner from '@/components/lottery/LotteryBanner';
+import LoginLinkBox from '@/components/LoginLinkBox';
+import { loginUrl } from '@/lib/login-link';
 
 interface Member {
   user_id: string; username: string; team_name: string; avatar_color: string;
@@ -36,6 +38,8 @@ export default function LeagueDetailPage() {
   const router = useRouter();
   const [league, setLeague] = useState<League | null>(null);
   const [weekData, setWeekData] = useState<WeekData | null>(null);
+  const [resetResult, setResetResult] = useState<{ username: string; link: string } | null>(null);
+  const [resetError, setResetError] = useState('');
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('classement');
   const [starting, setStarting] = useState(false);
@@ -81,6 +85,18 @@ export default function LeagueDetailPage() {
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 401)) alert(e instanceof Error ? e.message : 'Erreur');
       setStarting(false);
+    }
+  };
+
+  // Commissaire : nouveau lien pour un membre qui a perdu le sien (l'ancien cesse de marcher)
+  const resetLink = async (m: Member) => {
+    if (!window.confirm(`Créer un nouveau lien pour ${m.username} ? Son ancien lien ne marchera plus.`)) return;
+    setResetError('');
+    try {
+      const { loginToken } = await apiFetch<{ loginToken: string }>(`/api/leagues/${id}/members/${m.user_id}/reset-link`, { method: 'POST' });
+      setResetResult({ username: m.username, link: loginUrl(loginToken) });
+    } catch (e) {
+      setResetError(e instanceof ApiError ? e.message : 'Erreur réseau');
     }
   };
 
@@ -328,6 +344,14 @@ export default function LeagueDetailPage() {
           {/* ── CLASSEMENT ── */}
           {tab === 'classement' && (
             <div className="space-y-2">
+              {resetError && <p className="text-xs text-red-400">{resetError}</p>}
+              {resetResult && (
+                <div className="card space-y-2">
+                  <div className="font-semibold text-slate-100 text-sm">Nouveau lien de {resetResult.username}</div>
+                  <p className="text-xs text-slate-400">Envoie-le-lui en privé : il donne accès à son compte.</p>
+                  <LoginLinkBox link={resetResult.link} shareText={`${resetResult.username}, voici ton nouveau lien Mon Petit Parquet`} />
+                </div>
+              )}
               {league.members.map((m, i) => {
                 const entry = weekData?.wld[m.user_id];
                 const weekScore = weekData?.weekScores[m.user_id];
@@ -353,6 +377,11 @@ export default function LeagueDetailPage() {
                           </span>
                         )}
                       </div>
+                      {league.commissioner_id === user?.id && !m.is_bot && (
+                        <button type="button" onClick={() => resetLink(m)} className="text-[11px] text-slate-500 underline mt-0.5">
+                          Nouveau lien
+                        </button>
+                      )}
                     </div>
                     <div className="text-right">
                       <div className="font-black text-brand">{m.total_score.toFixed(1)}</div>

@@ -4,7 +4,6 @@ import { create } from 'zustand';
 export interface AuthUser {
   id: string;
   username: string;
-  email: string;
   avatarColor: string;
 }
 

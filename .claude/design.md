@@ -86,7 +86,9 @@ score_adverse_final = score_adverse × ton_defensive_mult
 - Auto-pick déclenché par n'importe quel client quand timer = 0, le serveur déduplique via `current_draft_pick`
 
 ## Auth
-- JWT custom signé avec `JWT_SECRET`, expiration 30j
+- Connexion par pseudo et lien personnel, sans e-mail ni mot de passe (voir `decisions.md`, 2026-11-06)
+- Lien personnel signé (`lib/auth.ts:buildLoginToken`), annulé en incrémentant `users.login_version`
+- JWT custom signé avec `JWT_SECRET`, expiration 365j
 - Stocké en `localStorage` via Zustand (`store/authStore.ts`)
 - Transmis en header `Authorization: Bearer <token>` sur toutes les API Routes
 - `getAuth(req)` dans `lib/auth.ts` extrait et vérifie le token côté serveur
@@ -102,7 +104,5 @@ score_adverse_final = score_adverse × ton_defensive_mult
 
 ## Patterns UI
 - Mobile-first, max-width 480px centré
-- Palette sombre : slate-900 / slate-800 / slate-700
-- Couleur accent : `--brand` (#F59E0B, ambre)
-- Polices : Inter (Google Fonts)
+- Direction : clair et haut de gamme, voir `DESIGN.md` à la racine. `app/auth/` est migré, le reste encore en sombre (slate, ambre `--brand`, Inter)
 - Pas de bibliothèque de composants — Tailwind pur
