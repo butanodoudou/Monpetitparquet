@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CURRENT_SEASON } from '@/lib/sports-api';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import { buildRoundRobin } from '@/lib/schedule';
-
-const SEASON_WEEKS = 30;
+import { createLeagueSchedule } from '@/lib/week-scoring';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -39,18 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!members || members.length < 2) return NextResponse.json({ error: 'Pas assez de membres' }, { status: 400 });
 
   const userIds = members.map(m => m.user_id);
-  const baseRounds = buildRoundRobin(userIds);
+  const { weeks, matchups, error: insertError } = await createLeagueSchedule(supabase, leagueId, userIds);
+  if (insertError) return NextResponse.json({ error: "Erreur lors de l'insertion" }, { status: 500 });
 
-  const rows = [];
-  for (let week = 1; week <= SEASON_WEEKS; week++) {
-    const round = baseRounds[(week - 1) % baseRounds.length];
-    for (const [homeUserId, awayUserId] of round) {
-      rows.push({ league_id: leagueId, season: CURRENT_SEASON, week, home_user_id: homeUserId, away_user_id: awayUserId });
-    }
-  }
-
-  const { error: insertError } = await supabase.from('weekly_matchups').insert(rows);
-  if (insertError) return NextResponse.json({ error: 'Erreur lors de l\'insertion' }, { status: 500 });
-
-  return NextResponse.json({ ok: true, weeksGenerated: SEASON_WEEKS, matchupsCreated: rows.length });
+  return NextResponse.json({ ok: true, weeksGenerated: weeks, matchupsCreated: matchups });
 }

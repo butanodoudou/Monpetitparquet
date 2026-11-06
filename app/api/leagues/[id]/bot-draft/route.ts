@@ -5,9 +5,8 @@ import { getAuth } from '@/lib/auth';
 import {
   PACK_PRICES, assignTier, computeTierThresholds, type PlayerTier,
 } from '@/lib/fantasy';
-import { buildRoundRobin } from '@/lib/schedule';
+import { createLeagueSchedule } from '@/lib/week-scoring';
 
-const SEASON_WEEKS = 30;
 const TIER_PRIORITY: PlayerTier[] = ['elite', 'gold', 'silver', 'bronze'];
 
 async function draftForBot(
@@ -149,15 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if ((scheduleExists ?? 0) === 0 && allMembers && allMembers.length >= 2) {
       const userIds = allMembers.map(m => m.user_id);
-      const baseRounds = buildRoundRobin(userIds);
-      const rows = [];
-      for (let week = 1; week <= SEASON_WEEKS; week++) {
-        const round = baseRounds[(week - 1) % baseRounds.length];
-        for (const [h, a] of round) {
-          rows.push({ league_id: leagueId, season: CURRENT_SEASON, week, home_user_id: h, away_user_id: a });
-        }
-      }
-      await supabase.from('weekly_matchups').insert(rows);
+      await createLeagueSchedule(supabase, leagueId, userIds);
     }
   }
 

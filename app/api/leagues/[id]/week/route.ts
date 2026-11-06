@@ -34,7 +34,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   // Journée scorée = dernière journée de la saison en cours avec au moins un match terminé
-  const currentWeek = (await getLastScoredWeek(supabase)) ?? 1;
+  // Une ligue lancée en cours de saison n'a pas de duel avant sa première journée : on affiche celle-ci.
+  const { data: firstMatchup } = await supabase
+    .from('weekly_matchups')
+    .select('week')
+    .eq('league_id', leagueId)
+    .eq('season', CURRENT_SEASON)
+    .order('week')
+    .limit(1)
+    .maybeSingle();
+  const currentWeek = Math.max((await getLastScoredWeek(supabase)) ?? 1, firstMatchup?.week ?? 1);
 
   const ctx = await loadLeagueContext(supabase, leagueId);
   const stats = await computeWeekStats(supabase, leagueId, currentWeek, ctx);

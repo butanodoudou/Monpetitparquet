@@ -3,9 +3,8 @@ import { CURRENT_SEASON } from '@/lib/sports-api';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import { PACK_PRICES } from '@/lib/fantasy';
-import { buildRoundRobin } from '@/lib/schedule';
+import { createLeagueSchedule } from '@/lib/week-scoring';
 
-const SEASON_WEEKS = 30;
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = getAuth(req);
@@ -89,15 +88,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       if (allMembers && allMembers.length >= 2) {
         const userIds = allMembers.map(m => m.user_id);
-        const baseRounds = buildRoundRobin(userIds);
-        const rows = [];
-        for (let week = 1; week <= SEASON_WEEKS; week++) {
-          const round = baseRounds[(week - 1) % baseRounds.length];
-          for (const [homeUserId, awayUserId] of round) {
-            rows.push({ league_id: leagueId, season: CURRENT_SEASON, week, home_user_id: homeUserId, away_user_id: awayUserId });
-          }
-        }
-        await supabase.from('weekly_matchups').insert(rows);
+        await createLeagueSchedule(supabase, leagueId, userIds);
       }
     }
   }

@@ -26,3 +26,17 @@ export function buildRoundRobin(userIds: string[]): Array<[string, string][]> {
 
   return rounds;
 }
+
+export const SEASON_WEEKS = 30;
+
+/** Duels de `firstWeek` à la fin de la saison, en tournant sur les rondes du round robin. */
+export function buildScheduleRows(leagueId: string, season: string, userIds: string[], firstWeek: number) {
+  const baseRounds = buildRoundRobin(userIds);
+  const rows: { league_id: string; season: string; week: number; home_user_id: string; away_user_id: string }[] = [];
+  for (let week = firstWeek; week <= SEASON_WEEKS; week++) {
+    for (const [homeUserId, awayUserId] of baseRounds[(week - firstWeek) % baseRounds.length]) {
+      rows.push({ league_id: leagueId, season, week, home_user_id: homeUserId, away_user_id: awayUserId });
+    }
+  }
+  return rows;
+}

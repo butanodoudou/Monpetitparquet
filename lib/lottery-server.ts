@@ -108,6 +108,8 @@ export async function getRoster(supabase: SupabaseClient, leagueId: string, user
   }));
 }
 
+const PERFS_PAGE_SIZE = 1000;
+
 /**
  * Classement de la ligue au moment de la session : victoires de duels (weekly_matchups.winner_user_id,
  * semaines <= week) puis points cumulés de la saison en cours des joueurs actuellement en équipe.
@@ -135,15 +137,22 @@ export async function computeLeagueStats(
 
   const points: Record<string, number> = {};
   if (playerIds.length > 0) {
-    const { data: perfs } = await supabase
-      .from('player_performances')
-      .select('player_id, fantasy_score, match:matches!inner(status, season)')
-      .in('player_id', playerIds)
-      .eq('match.season', CURRENT_SEASON);
-    for (const p of (perfs ?? []) as any[]) {
-      if (p.match?.status !== 'finished') continue;
-      const uid = owner[p.player_id];
-      if (uid) points[uid] = (points[uid] ?? 0) + (p.fantasy_score ?? 0);
+    // Toute la ligue sur toute la saison dépasse le plafond de 1000 lignes de Supabase : lecture par pages.
+    for (let from = 0; ; from += PERFS_PAGE_SIZE) {
+      const { data: perfs } = await supabase
+        .from('player_performances')
+        .select('player_id, fantasy_score, match:matches!inner(status, season)')
+        .in('player_id', playerIds)
+        .eq('match.season', CURRENT_SEASON)
+        .order('match_id')
+        .order('player_id')
+        .range(from, from + PERFS_PAGE_SIZE - 1);
+      for (const p of (perfs ?? []) as any[]) {
+        if (p.match?.status !== 'finished') continue;
+        const uid = owner[p.player_id];
+        if (uid) points[uid] = (points[uid] ?? 0) + (p.fantasy_score ?? 0);
+      }
+      if ((perfs?.length ?? 0) < PERFS_PAGE_SIZE) break;
     }
   }
 

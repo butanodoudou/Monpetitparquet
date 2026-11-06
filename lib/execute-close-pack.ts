@@ -5,9 +5,8 @@ import {
   assignAuctionTier, computeAuctionTierThresholds, getPositionGroup,
   type AuctionTier, type PositionGroup,
 } from '@/lib/fantasy';
-import { buildRoundRobin } from '@/lib/schedule';
+import { createLeagueSchedule } from '@/lib/week-scoring';
 
-const SEASON_WEEKS = 30;
 // Un pack resté en 'closing' au-delà de ce délai est considéré comme planté et retraité
 export const CLOSING_STALE_MS = 2 * 60 * 1000;
 
@@ -244,15 +243,7 @@ export async function executeClosePack(
 
     if ((scheduleExists ?? 0) === 0 && allMembersCheck && allMembersCheck.length >= 2) {
       const userIds = allMembersCheck.map(m => m.user_id);
-      const baseRounds = buildRoundRobin(userIds);
-      const rows = [];
-      for (let week = 1; week <= SEASON_WEEKS; week++) {
-        const round = baseRounds[(week - 1) % baseRounds.length];
-        for (const [h, a] of round) {
-          rows.push({ league_id: leagueId, season: CURRENT_SEASON, week, home_user_id: h, away_user_id: a });
-        }
-      }
-      await supabase.from('weekly_matchups').insert(rows);
+      await createLeagueSchedule(supabase, leagueId, userIds);
     }
   }
 

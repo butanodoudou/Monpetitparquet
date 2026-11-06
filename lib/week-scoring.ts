@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { db } from '@/lib/supabase';
 import { CURRENT_SEASON } from '@/lib/sports-api';
+import { buildScheduleRows, SEASON_WEEKS } from '@/lib/schedule';
 import {
   computeDefaultStarters,
   computeChemistryBonus,
@@ -30,12 +31,20 @@ async function loadSeasonMatches(supabase: SupabaseClient): Promise<MatchLite[]>
   return (data ?? []) as MatchLite[];
 }
 
-/** Dernière journée (saison en cours) ayant au moins un match terminé, ou null. */
+/**
+ * Dernière journée (saison en cours) ayant au moins un match terminé, ou null.
+ * Un match joué en avance (J13 jouée pendant la J7) ne compte pas : on s'arrête à la première
+ * journée qui a encore des matchs à jouer.
+ */
 export async function getLastScoredWeek(supabase: SupabaseClient): Promise<number | null> {
   const matches = await loadSeasonMatches(supabase);
+  let firstOpen = Infinity;
+  for (const m of matches) {
+    if (m.week !== null && (m.status === 'scheduled' || m.status === 'live') && m.week < firstOpen) firstOpen = m.week;
+  }
   let max: number | null = null;
   for (const m of matches) {
-    if (m.status === 'finished' && m.week !== null && (max === null || m.week > max)) max = m.week;
+    if (m.status === 'finished' && m.week !== null && m.week <= firstOpen && (max === null || m.week > max)) max = m.week;
   }
   return max;
 }
@@ -77,6 +86,23 @@ export async function getPlayableWeek(
     lockAt: lockAtMs === null ? null : new Date(lockAtMs).toISOString(),
     isLocked: lockAtMs !== null && Date.now() >= lockAtMs,
   };
+}
+
+/**
+ * Crée le calendrier d'une ligue à partir de la prochaine journée jouable : une ligue lancée en cours
+ * de saison ne doit pas régler des duels sur des matchs joués avant son draft.
+ */
+export async function createLeagueSchedule(
+  supabase: SupabaseClient,
+  leagueId: string,
+  userIds: string[]
+): Promise<{ weeks: number; matchups: number; error: string | null }> {
+  const { week, isLocked } = await getPlayableWeek(supabase);
+  const firstWeek = isLocked ? week + 1 : week;
+  const rows = buildScheduleRows(leagueId, CURRENT_SEASON, userIds, firstWeek);
+  if (rows.length === 0) return { weeks: 0, matchups: 0, error: null };
+  const { error } = await supabase.from('weekly_matchups').insert(rows);
+  return { weeks: SEASON_WEEKS - firstWeek + 1, matchups: rows.length, error: error?.message ?? null };
 }
 
 // ─── Contexte de ligue : rosters et compositions ────────────────
@@ -297,6 +323,11 @@ export async function settleFinishedWeeks(leagueId: string): Promise<number> {
     byWeek.set(m.week, e);
   }
 
+  // Une journée située après une journée encore ouverte n'est pas close : ses autres matchs peuvent
+  // être au-delà de la fenêtre `events/next/0` (cas d'un match de J13 joué en avance pendant la J7).
+  let firstOpenWeek = Infinity;
+  byWeek.forEach((e, w) => { if (e.open > 0 && w < firstOpenWeek) firstOpenWeek = w; });
+
   // Journée close dès que tous ses matchs en base sont terminés ou annulés (au moins un terminé).
   // Match reporté : il ne bloque la clôture que pendant le délai de repli (36 h après le dernier match
   // joué de la journée). Passé ce délai, la journée est réglée sans lui : ses points, joués plus tard,
@@ -305,7 +336,7 @@ export async function settleFinishedWeeks(leagueId: string): Promise<number> {
   // on ne sait pas si des matchs de cette journée manquent encore -> repli 36 h après le dernier match.
   const settleable = (week: number): boolean => {
     const e = byWeek.get(week);
-    if (!e || e.finished === 0 || e.open > 0) return false;
+    if (!e || e.finished === 0 || e.open > 0 || week > firstOpenWeek) return false;
     if (e.postponed > 0 && Date.now() - e.lastPlayedMs < SETTLE_DELAY_MS) return false;
     return maxKnownWeek > week || Date.now() - e.lastMs >= SETTLE_DELAY_MS;
   };
