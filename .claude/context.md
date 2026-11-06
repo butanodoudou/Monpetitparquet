@@ -93,3 +93,5 @@ CRON_SECRET
 - `.claude/settings.local.json` contient une ancienne clé en clair : ne pas le commiter.
 - Connexion par pseudo et lien personnel : migration `2026-11-06_login-link.sql` à appliquer AVANT de déployer ce code.
 - Agents : `designer` refondu sur `PRODUCT.md` et `DESIGN.md`, nouvel agent `testeur`. Tests navigateur : `npm run test:e2e`.
+- Toute l'app est en thème clair. Contrôle visuel sans base : `CAPTURES=dossier npx playwright test e2e/visuel` avec un serveur de dev (API simulée dans `e2e/visuel/fixtures.ts`).
+- Moments de la semaine : `lib/week-phase.ts`, tests `npx tsx scripts/check-week-phase.ts`.

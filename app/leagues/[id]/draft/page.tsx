@@ -1,4 +1,6 @@
 'use client';
+import TierPips from '@/components/TierPips';
+import { formatPoints } from '@/lib/format';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
@@ -9,7 +11,7 @@ import {
   type AuctionTier, type PositionGroup,
 } from '@/lib/fantasy';
 
-const fmt = (n: number) => '$' + n.toLocaleString('fr-FR');
+const fmt = (n: number) => `${n.toLocaleString('fr-FR')} €`;
 
 function fmtCountdown(ms: number): string {
   if (ms <= 0) return 'Expiré';
@@ -51,8 +53,6 @@ interface AuctionState {
   currentPack: CurrentPack | null;
   draftComplete: boolean;
 }
-
-const TIER_EMOJI: Record<AuctionTier, string> = { elite: '💜', star: '⭐', basique: '⚪' };
 
 export default function DraftPage() {
   const { id: leagueId } = useParams<{ id: string }>();
@@ -198,19 +198,18 @@ export default function DraftPage() {
 
   if (loading && !state) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-slate-900">
-        <div className="text-5xl animate-bounce">🏀</div>
+      <div className="flex min-h-dvh items-center justify-center bg-paper">
+        <div className="w-8 h-8 rounded-full border-2 border-line border-t-brass animate-spin" />
       </div>
     );
   }
   if (!state) {
     return (
-      <div className="flex flex-col min-h-dvh bg-slate-900">
+      <div className="flex flex-col min-h-dvh bg-paper">
         <TopBar title="Draft · Enchères" backHref={`/leagues/${leagueId}`} />
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <div className="text-4xl mb-3">⚠️</div>
-          <p className="text-slate-300 font-semibold mb-1">Impossible de charger la draft</p>
-          <p className="text-slate-500 text-sm mb-5">{loadError || 'Erreur inconnue'}</p>
+          <p className="text-ink2 font-semibold mb-1">Impossible de charger la draft</p>
+          <p className="text-muted text-sm mb-5">{loadError || 'Erreur inconnue'}</p>
           <button className="btn-primary max-w-xs" onClick={() => { setLoading(true); load(); }}>Réessayer</button>
         </div>
       </div>
@@ -219,10 +218,9 @@ export default function DraftPage() {
 
   if (state.draftComplete) {
     return (
-      <div className="flex flex-col min-h-dvh bg-slate-900 items-center justify-center px-4 text-center">
-        <div className="text-6xl mb-4">🎉</div>
-        <h1 className="text-3xl font-black text-slate-100 mb-2">Draft terminée !</h1>
-        <p className="text-slate-400 mb-6">Tous les managers ont leur roster complet. Bonne chance !</p>
+      <div className="flex flex-col min-h-dvh bg-paper items-center justify-center px-4 text-center">
+        <h1 className="text-3xl font-black text-ink mb-2">Draft terminée !</h1>
+        <p className="text-ink2 mb-6">Tous les managers ont leur roster complet. Bonne chance !</p>
         <button className="btn-primary max-w-xs" onClick={() => router.push(`/leagues/${leagueId}/team`)}>
           Voir mon équipe →
         </button>
@@ -253,25 +251,25 @@ export default function DraftPage() {
     : false;
 
   return (
-    <div className="flex flex-col min-h-dvh bg-slate-900">
+    <div className="flex flex-col min-h-dvh bg-paper">
       <TopBar title="Draft · Enchères" backHref={`/leagues/${leagueId}`} />
       {loadError && (
-        <div className="mx-4 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2 text-amber-400 text-xs">
+        <div className="mx-4 mt-2 bg-brand/10 border border-brand/30 rounded-xl px-4 py-2 text-brand text-xs">
           Connexion instable : {loadError}. Nouvelle tentative automatique…
         </div>
       )}
       {/* Header */}
-      <div className="px-4 py-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
+      <div className="px-4 py-3 bg-surface/80 border-b border-line flex items-center justify-between">
         <div>
           {pack && (
-            <div className="text-slate-400 text-xs flex items-center gap-2">
+            <div className="text-ink2 text-xs flex items-center gap-2">
               <span>Pack #{pack.packNumber}</span>
               {pack.status === 'bidding' && (
                 <>
                   <span>· {submittedCount}/{totalMembers} soumis</span>
                   {countdown && (
-                    <span className={`font-semibold ${isExpired ? 'text-red-400' : 'text-slate-400'}`}>
-                      · ⏱ {countdown}
+                    <span className={`font-semibold ${isExpired ? 'text-red-700' : 'text-ink2'}`}>
+                      · {countdown}
                     </span>
                   )}
                 </>
@@ -280,16 +278,16 @@ export default function DraftPage() {
               {pack.status === 'closed' && <span>· Résultats</span>}
             </div>
           )}
-          {!pack && <div className="text-slate-400 text-xs">Prêt à démarrer</div>}
+          {!pack && <div className="text-ink2 text-xs">Prêt à démarrer</div>}
         </div>
         <div className="text-right">
           <div className="text-brand font-black text-xl">{fmt(state.myCredits)}</div>
-          <div className="text-slate-500 text-xs">budget restant</div>
+          <div className="text-muted text-xs">budget restant</div>
         </div>
       </div>
 
       {error && (
-        <div className="mx-4 mt-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2 text-red-400 text-xs">{error}</div>
+        <div className="mx-4 mt-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2 text-red-700 text-xs">{error}</div>
       )}
 
       <div className="flex-1 overflow-y-auto px-4 pb-6 pt-3">
@@ -298,12 +296,12 @@ export default function DraftPage() {
         <div className="mb-3 flex gap-1.5">
           {(Object.keys(ROSTER_SLOTS) as PositionGroup[]).map(g => (
             <div key={g} className={`flex-1 rounded-xl px-2 py-1.5 text-center border ${
-              (slots?.[g] ?? 0) > 0 ? 'bg-slate-800 border-slate-700' : 'bg-red-500/10 border-red-500/30'
+              (slots?.[g] ?? 0) > 0 ? 'bg-surface border-line' : 'bg-red-500/10 border-red-500/30'
             }`}>
-              <div className={`text-sm font-black ${(slots?.[g] ?? 0) > 0 ? 'text-slate-100' : 'text-red-400'}`}>
+              <div className={`text-sm font-black ${(slots?.[g] ?? 0) > 0 ? 'text-ink' : 'text-red-700'}`}>
                 {slots?.[g] ?? 0}/{ROSTER_SLOTS[g]}
               </div>
-              <div className="text-[10px] text-slate-500">{GROUP_LABELS[g]} libres</div>
+              <div className="text-[10px] text-muted">{GROUP_LABELS[g]} libres</div>
             </div>
           ))}
         </div>
@@ -311,9 +309,9 @@ export default function DraftPage() {
         {/* ── RÉSOLUTION EN COURS ── */}
         {pack && pack.status === 'closing' && (
           <div className="text-center py-12">
-            <div className="text-4xl mb-3 animate-bounce">⏳</div>
-            <div className="text-slate-100 font-bold text-base mb-1">Résolution en cours…</div>
-            <div className="text-slate-500 text-sm">Les enchères du pack #{pack.packNumber} sont en train d'être attribuées.</div>
+            <div className="w-8 h-8 rounded-full border-2 border-line border-t-brass animate-spin" />
+            <div className="text-ink font-bold text-base mb-1">Résolution en cours…</div>
+            <div className="text-muted text-sm">Les enchères du pack #{pack.packNumber} sont en train d'être attribuées.</div>
           </div>
         )}
 
@@ -321,39 +319,38 @@ export default function DraftPage() {
         {!pack && (
           <div>
             <div className="text-center py-8">
-              <div className="text-4xl mb-3">📦</div>
               {state.isCommissioner ? (
                 <>
-                  <div className="text-slate-100 font-bold text-base mb-1">Prêt à tirer un pack ?</div>
-                  <div className="text-slate-500 text-sm mb-1">5 joueurs · Enchères silencieuses · 12h pour miser</div>
-                  <div className="text-slate-600 text-xs mb-5">
+                  <div className="text-ink font-bold text-base mb-1">Prêt à tirer un pack ?</div>
+                  <div className="text-muted text-sm mb-1">5 joueurs · Enchères silencieuses · 12h pour miser</div>
+                  <div className="text-muted text-xs mb-5">
                     Élite min {fmt(30_000)} · Star min {fmt(10_000)} · Basique gratuit
                   </div>
                   <button onClick={drawPack} disabled={drawing} className="btn-primary max-w-xs">
-                    {drawing ? '⏳ Tirage…' : '🎴 Tirer le pack #1'}
+                    {drawing ? 'Tirage…' : 'Tirer le pack #1'}
                   </button>
                 </>
               ) : (
                 <>
-                  <div className="text-slate-300 font-bold text-base mb-1">En attente…</div>
-                  <div className="text-slate-500 text-sm">Le commissaire va tirer le premier pack.</div>
+                  <div className="text-ink2 font-bold text-base mb-1">En attente…</div>
+                  <div className="text-muted text-sm">Le commissaire va tirer le premier pack.</div>
                 </>
               )}
             </div>
 
             <div className="mt-4 space-y-2">
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-3">Budgets</div>
+              <div className="text-xs text-muted font-semibold mb-3">Budgets</div>
               {state.members.map(m => (
-                <div key={m.userId} className={`flex items-center gap-3 py-2 px-3 rounded-xl ${m.userId === myId ? 'bg-brand/10 border border-brand/20' : 'bg-slate-800'}`}>
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black text-slate-900 flex-shrink-0"
+                <div key={m.userId} className={`flex items-center gap-3 py-2 px-3 rounded-xl ${m.userId === myId ? 'bg-brand/10 border border-brand/20' : 'bg-surface'}`}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black text-ink flex-shrink-0"
                     style={{ backgroundColor: m.avatarColor }}>
                     {m.username[0]?.toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-slate-200 text-xs font-semibold truncate">
+                    <div className="text-ink text-xs font-semibold truncate">
                       {m.username}{m.userId === myId && <span className="text-brand ml-1">(moi)</span>}
                     </div>
-                    <div className="text-slate-500 text-[10px]">{m.playerCount} joueur{m.playerCount !== 1 ? 's' : ''}</div>
+                    <div className="text-muted text-[10px]">{m.playerCount} joueur{m.playerCount !== 1 ? 's' : ''}</div>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="text-xs font-black text-brand">{fmt(m.credits)}</div>
@@ -371,9 +368,8 @@ export default function DraftPage() {
               /* Waiting view */
               <div>
                 <div className="text-center py-4 mb-4 bg-green-500/10 border border-green-500/20 rounded-2xl">
-                  <div className="text-2xl mb-1">✅</div>
-                  <div className="text-slate-100 font-bold text-sm">Enchères soumises !</div>
-                  <div className="text-slate-400 text-xs mt-0.5">
+                  <div className="text-ink font-bold text-sm">Enchères soumises !</div>
+                  <div className="text-ink2 text-xs mt-0.5">
                     En attente des autres ({submittedCount}/{totalMembers})
                   </div>
                 </div>
@@ -386,13 +382,13 @@ export default function DraftPage() {
                     return (
                       <div key={player.id} className={`rounded-xl border p-2.5 flex items-center gap-2.5 ${cfg.bg}`}>
                         <span className={`text-[10px] font-black ${cfg.color} w-14 text-center shrink-0`}>
-                          {TIER_EMOJI[player.tier]} {cfg.label}
+                          <TierPips tier={player.tier} showLabel={false} /> {cfg.label}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-slate-100 font-semibold text-xs truncate">{player.name}</div>
-                          <div className="text-slate-500 text-[10px]">{player.position} · {player.team}</div>
+                          <div className="text-ink font-semibold text-xs truncate">{player.name}</div>
+                          <div className="text-muted text-[10px]">{player.position} · {player.team}</div>
                         </div>
-                        <div className={`font-black text-sm flex-shrink-0 ${myBid >= tierMin && myBid > 0 ? 'text-brand' : myBid === 0 && tierMin === 0 ? 'text-slate-400' : 'text-slate-600'}`}>
+                        <div className={`font-black text-sm flex-shrink-0 ${myBid >= tierMin && myBid > 0 ? 'text-brand' : myBid === 0 && tierMin === 0 ? 'text-ink2' : 'text-muted'}`}>
                           {myBid >= tierMin || tierMin === 0 ? fmt(myBid) : '—'}
                         </div>
                       </div>
@@ -404,13 +400,13 @@ export default function DraftPage() {
                   <div className="space-y-2">
                     {allSubmitted && (
                       <button onClick={closePack} disabled={closing} className="btn-primary w-full py-3">
-                        {closing ? '⏳ Résolution…' : '🔒 Fermer les enchères'}
+                        {closing ? 'Résolution…' : 'Fermer les enchères'}
                       </button>
                     )}
                     {!allSubmitted && (
                       <button onClick={closePack} disabled={closing}
-                        className="w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold">
-                        {closing ? '⏳…' : '⏭ Fermer quand même'}
+                        className="w-full py-2 rounded-xl bg-raised/60 border border-line-strong text-ink2 text-sm font-semibold">
+                        {closing ? '…' : 'Fermer quand même'}
                       </button>
                     )}
                   </div>
@@ -420,13 +416,13 @@ export default function DraftPage() {
               /* Bid input view */
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-slate-300 text-sm font-semibold">Tes enchères</div>
-                  <div className={`text-sm font-black ${budgetOk ? 'text-brand' : 'text-red-400'}`}>
+                  <div className="text-ink2 text-sm font-semibold">Tes enchères</div>
+                  <div className={`text-sm font-black ${budgetOk ? 'text-brand' : 'text-red-700'}`}>
                     {fmt(budgetAfterBids)} restants
                   </div>
                 </div>
 
-                <div className="mb-3 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div className="mb-3 bg-surface rounded-full h-1.5 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${budgetOk ? 'bg-brand' : 'bg-red-500'}`}
                     style={{ width: `${Math.min(100, (totalBid / Math.max(1, state.myCredits)) * 100)}%` }}
@@ -444,29 +440,29 @@ export default function DraftPage() {
                     return (
                       <div key={player.id} className={`rounded-2xl border p-3 ${cfg.bg} ${!canAfford ? 'opacity-50 grayscale' : ''}`}>
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-surface/60 flex items-center justify-center text-xs font-bold text-ink2 flex-shrink-0">
                             #{player.jersey_number ?? player.position[0]}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                               <span className={`text-[10px] font-black ${cfg.color}`}>
-                                {TIER_EMOJI[player.tier]} {cfg.label}
+                                <TierPips tier={player.tier} showLabel={false} /> {cfg.label}
                               </span>
-                              <span className="text-[10px] text-slate-500">
+                              <span className="text-[10px] text-muted">
                                 min {fmt(tierMin)}
                               </span>
                             </div>
-                            <div className="text-slate-100 font-bold text-sm truncate">{player.name}</div>
-                            <div className="text-slate-400 text-[11px]">
-                              {player.position} · {player.team} · <span className="text-slate-300">{player.season_avg_fantasy.toFixed(1)}</span> pts
+                            <div className="text-ink font-bold text-sm truncate">{player.name}</div>
+                            <div className="text-ink2 text-[11px]">
+                              {player.position} · {player.team} · <span className="text-ink2">{formatPoints(player.season_avg_fantasy)}</span> pts
                             </div>
                           </div>
                           <div className="flex-shrink-0">
                             {!canAfford ? (
-                              <div className="text-slate-600 text-xs font-bold text-center w-20">$0<br/><span className="text-[10px]">{eligible ? 'budget insuf.' : 'poste complet'}</span></div>
+                              <div className="text-muted text-xs font-bold text-center w-20">$0<br/><span className="text-[10px]">{eligible ? 'budget insuf.' : 'poste complet'}</span></div>
                             ) : (
                               <div className="flex items-center gap-1">
-                                <span className="text-slate-500 text-xs">$</span>
+                                <span className="text-muted text-xs">€</span>
                                 <input
                                   type="number"
                                   min={tierMin}
@@ -479,7 +475,7 @@ export default function DraftPage() {
                                     const val = raw === 0 ? 0 : Math.max(tierMin, Math.min(state.myCredits, raw));
                                     setLocalBids(prev => ({ ...prev, [player.id]: val }));
                                   }}
-                                  className="w-20 bg-slate-900/60 border border-slate-600 rounded-lg px-2 py-1.5 text-center text-slate-100 font-bold text-sm focus:outline-none focus:border-brand"
+                                  className="w-20 bg-paper/60 border border-line-strong rounded-lg px-2 py-1.5 text-center text-ink font-bold text-sm focus:outline-none focus:border-brand"
                                 />
                               </div>
                             )}
@@ -491,7 +487,7 @@ export default function DraftPage() {
                 </div>
 
                 {!budgetOk && (
-                  <div className="text-center text-red-400 text-xs mb-2">
+                  <div className="text-center text-red-700 text-xs mb-2">
                     Budget dépassé de {fmt(Math.abs(budgetAfterBids))}
                   </div>
                 )}
@@ -501,13 +497,13 @@ export default function DraftPage() {
                   disabled={submitting || !budgetOk}
                   className={`btn-primary w-full py-3 ${!budgetOk ? 'opacity-40' : ''}`}
                 >
-                  {submitting ? '⏳ Envoi…' : `Soumettre · ${fmt(totalBid)}`}
+                  {submitting ? 'Envoi…' : `Soumettre · ${fmt(totalBid)}`}
                 </button>
 
                 {state.isCommissioner && (
                   <button onClick={closePack} disabled={closing}
-                    className="mt-2 w-full py-2 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 text-sm font-semibold">
-                    {closing ? '⏳…' : '⏭ Forcer la fermeture'}
+                    className="mt-2 w-full py-2 rounded-xl bg-raised/60 border border-line-strong text-ink2 text-sm font-semibold">
+                    {closing ? '…' : 'Forcer la fermeture'}
                   </button>
                 )}
               </div>
@@ -518,8 +514,8 @@ export default function DraftPage() {
               {state.members.map(m => (
                 <div key={m.userId} className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
                   pack.submittedUserIds.includes(m.userId)
-                    ? 'bg-green-500/20 text-green-300 border border-green-500/20'
-                    : 'bg-slate-700 text-slate-500 border border-slate-700'
+                    ? 'bg-green-500/20 text-green-700 border border-green-500/20'
+                    : 'bg-raised text-muted border border-line'
                 }`}>
                   <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.avatarColor }} />
                   {m.username}{pack.submittedUserIds.includes(m.userId) ? ' ✓' : ' …'}
@@ -533,8 +529,7 @@ export default function DraftPage() {
         {pack && pack.status === 'closed' && (
           <div>
             <div className="text-center mb-4">
-              <div className="text-2xl mb-1">🏆</div>
-              <div className="text-slate-100 font-black text-base">Résultats — Pack #{pack.packNumber}</div>
+              <div className="text-ink font-black text-base">Résultats — Pack #{pack.packNumber}</div>
             </div>
 
             <div className="space-y-2.5 mb-5">
@@ -545,29 +540,29 @@ export default function DraftPage() {
 
                 return (
                   <div key={player.id} className={`rounded-2xl border p-3 ${
-                    iMeWon ? 'bg-brand/10 border-brand/40' : winnerInfo ? cfg.bg : 'bg-slate-800/40 border-slate-700 opacity-50'
+                    iMeWon ? 'bg-brand/10 border-brand/40' : winnerInfo ? cfg.bg : 'bg-surface/40 border-line opacity-50'
                   }`}>
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-slate-800/60 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-surface/60 flex items-center justify-center text-xs font-bold text-ink2 flex-shrink-0">
                         #{player.jersey_number ?? player.position[0]}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className={`text-[10px] font-black ${cfg.color} mb-0.5`}>
-                          {TIER_EMOJI[player.tier]} {cfg.label}
+                          <TierPips tier={player.tier} showLabel={false} /> {cfg.label}
                         </div>
-                        <div className="text-slate-100 font-bold text-sm truncate">{player.name}</div>
-                        <div className="text-slate-400 text-[11px]">{player.position} · {player.team}</div>
+                        <div className="text-ink font-bold text-sm truncate">{player.name}</div>
+                        <div className="text-ink2 text-[11px]">{player.position} · {player.team}</div>
                       </div>
                       <div className="flex-shrink-0 text-right min-w-[80px]">
                         {winnerInfo ? (
                           <>
-                            <div className={`font-black text-sm ${iMeWon ? 'text-brand' : 'text-slate-200'}`}>
-                              {iMeWon ? '🎉 Toi' : winnerInfo.username}
+                            <div className={`font-black text-sm ${iMeWon ? 'text-brand' : 'text-ink'}`}>
+                              {iMeWon ? 'Toi' : winnerInfo.username}
                             </div>
-                            <div className="text-xs text-slate-400">{fmt(winnerInfo.amount)}</div>
+                            <div className="text-xs text-ink2">{fmt(winnerInfo.amount)}</div>
                           </>
                         ) : (
-                          <div className="text-xs text-slate-600">Non attribué</div>
+                          <div className="text-xs text-muted">Non attribué</div>
                         )}
                       </div>
                     </div>
@@ -578,27 +573,27 @@ export default function DraftPage() {
 
             {state.isCommissioner ? (
               <button onClick={drawPack} disabled={drawing} className="btn-primary w-full py-3">
-                {drawing ? '⏳ Tirage…' : '🎴 Tirer le prochain pack'}
+                {drawing ? 'Tirage…' : 'Tirer le prochain pack'}
               </button>
             ) : (
-              <div className="text-center text-slate-500 text-sm py-2">
+              <div className="text-center text-muted text-sm py-2">
                 En attente du prochain pack par le commissaire…
               </div>
             )}
 
             {/* Budgets */}
             <div className="mt-5 space-y-2">
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-2">Budgets restants</div>
+              <div className="text-xs text-muted font-semibold mb-2">Budgets restants</div>
               {state.members.map(m => (
-                <div key={m.userId} className={`flex items-center gap-3 py-1.5 px-3 rounded-xl ${m.userId === myId ? 'bg-brand/10 border border-brand/20' : 'bg-slate-800/60'}`}>
-                  <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-black text-slate-900"
+                <div key={m.userId} className={`flex items-center gap-3 py-1.5 px-3 rounded-xl ${m.userId === myId ? 'bg-brand/10 border border-brand/20' : 'bg-surface/60'}`}>
+                  <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-black text-ink"
                     style={{ backgroundColor: m.avatarColor }}>
                     {m.username[0]?.toUpperCase()}
                   </div>
-                  <div className="flex-1 text-slate-300 text-xs font-semibold truncate">
+                  <div className="flex-1 text-ink2 text-xs font-semibold truncate">
                     {m.username}{m.userId === myId && <span className="text-brand ml-1">(moi)</span>}
                   </div>
-                  <div className="text-[10px] text-slate-500 mr-2">{m.playerCount} joueurs</div>
+                  <div className="text-[10px] text-muted mr-2">{m.playerCount} joueurs</div>
                   <div className="text-xs font-black text-brand">{fmt(m.credits)}</div>
                 </div>
               ))}

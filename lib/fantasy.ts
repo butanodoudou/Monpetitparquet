@@ -105,10 +105,10 @@ export const TIER_PERCENTILES: Record<PlayerTier, number> = {
 };
 
 export const TIER_CONFIG: Record<PlayerTier, { label: string; color: string; glow: string; bg: string }> = {
-  elite:  { label: 'Élite',  color: 'text-purple-400', glow: 'shadow-purple-500/60', bg: 'from-purple-900/80 to-slate-900' },
-  gold:   { label: 'Gold',   color: 'text-yellow-400', glow: 'shadow-yellow-500/60', bg: 'from-yellow-900/60 to-slate-900' },
-  silver: { label: 'Silver', color: 'text-slate-300',  glow: 'shadow-slate-400/60',  bg: 'from-slate-600/60 to-slate-900' },
-  bronze: { label: 'Bronze', color: 'text-orange-400', glow: 'shadow-orange-700/40', bg: 'from-orange-900/40 to-slate-900' },
+  elite:  { label: 'Élite',  color: 'text-ame', glow: 'shadow-purple-500/60', bg: 'from-purple-900/80 to-slate-900' },
+  gold:   { label: 'Gold',   color: 'text-brand', glow: 'shadow-yellow-500/60', bg: 'from-yellow-900/60 to-slate-900' },
+  silver: { label: 'Silver', color: 'text-ink2',  glow: 'shadow-slate-400/60',  bg: 'from-slate-600/60 to-slate-900' },
+  bronze: { label: 'Bronze', color: 'text-orange-700', glow: 'shadow-orange-700/40', bg: 'from-orange-900/40 to-slate-900' },
 };
 
 export function assignTier(fantasy: number, p5: number, p20: number, p50: number): PlayerTier {
@@ -116,6 +116,15 @@ export function assignTier(fantasy: number, p5: number, p20: number, p50: number
   if (fantasy >= p20) return 'gold';
   if (fantasy >= p50) return 'silver';
   return 'bronze';
+}
+
+/** Rareté de chaque joueur selon sa moyenne parmi tous ceux qui ont joué. */
+export function tiersByPlayer(players: { id: number; season_avg_fantasy: number }[]): Map<number, PlayerTier> {
+  const played = players.filter(p => p.season_avg_fantasy > 0);
+  const sorted = played.map(p => p.season_avg_fantasy).sort((a, b) => b - a);
+  const cut = (share: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * share))] ?? 0;
+  const [p5, p20, p50] = [cut(TIER_PERCENTILES.elite), cut(TIER_PERCENTILES.gold), cut(TIER_PERCENTILES.silver)];
+  return new Map(played.map(p => [p.id, assignTier(p.season_avg_fantasy, p5, p20, p50)]));
 }
 
 export function weightedRandom(weights: Record<PlayerTier, number>): PlayerTier {
@@ -258,9 +267,9 @@ export const AUCTION_PACK_COMPOSITION: AuctionTier[] = [
 ];
 
 export const AUCTION_TIER_CONFIG: Record<AuctionTier, { label: string; color: string; bg: string }> = {
-  elite:   { label: 'Élite',   color: 'text-purple-400', bg: 'bg-purple-900/30 border-purple-500/40' },
-  star:    { label: 'Star',    color: 'text-yellow-400', bg: 'bg-yellow-900/20 border-yellow-500/30' },
-  basique: { label: 'Basique', color: 'text-slate-300',  bg: 'bg-slate-700/30 border-slate-600/30' },
+  elite:   { label: 'Élite',   color: 'text-ame', bg: 'bg-ame/10 border-ame/30' },
+  star:    { label: 'Star',    color: 'text-brand', bg: 'bg-brand/10 border-brand/30' },
+  basique: { label: 'Basique', color: 'text-ink2',  bg: 'bg-raised border-line' },
 };
 
 export function assignAuctionTier(fantasy: number, p5: number, p25: number): AuctionTier {

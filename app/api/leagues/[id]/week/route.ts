@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CURRENT_SEASON } from '@/lib/sports-api';
+import { getWeekPhase, showsPlayableWeek } from '@/lib/week-phase';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import {
   getLastScoredWeek,
+  getPlayableWeek,
   loadLeagueContext,
   computeWeekStats,
   scoreMatchup,
@@ -43,7 +45,26 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .order('week')
     .limit(1)
     .maybeSingle();
-  const currentWeek = Math.max((await getLastScoredWeek(supabase)) ?? 1, firstMatchup?.week ?? 1);
+  const playable = await getPlayableWeek(supabase);
+  const { data: lastSettled } = await supabase
+    .from('weekly_matchups')
+    .select('settled_at')
+    .eq('league_id', leagueId)
+    .eq('season', CURRENT_SEASON)
+    .not('settled_at', 'is', null)
+    .order('settled_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const phase = getWeekPhase({
+    now: Date.now(),
+    lockAt: playable.lockAt ? new Date(playable.lockAt).getTime() : null,
+    isLocked: playable.isLocked,
+    lastSettledAt: lastSettled?.settled_at ? new Date(lastSettled.settled_at).getTime() : null,
+  });
+
+  const lastScored = (await getLastScoredWeek(supabase)) ?? 1;
+  const currentWeek = Math.max(showsPlayableWeek(phase) ? playable.week : lastScored, firstMatchup?.week ?? 1);
 
   const ctx = await loadLeagueContext(supabase, leagueId);
   const stats = await computeWeekStats(supabase, leagueId, currentWeek, ctx);
@@ -122,5 +143,5 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     wld[uid] = { wins, losses, draws };
   }
 
-  return NextResponse.json({ currentWeek, scheduleGenerated, matchups, weekScores: weekScoreByUser, wld });
+  return NextResponse.json({ currentWeek, scheduleGenerated, matchups, weekScores: weekScoreByUser, wld, phase, lockAt: playable.lockAt });
 }

@@ -513,3 +513,39 @@ Points clés :
 **Alternatives écartées** : Taste Skill (orienté sites vitrine) ; `npx impeccable install` (exécute du code tiers et ajoute un détecteur à chaque édition) ; agents officiels Playwright (trois agents et un serveur MCP en plus, pour une petite app).
 
 **Raison** : Impeccable sait reprendre une interface existante, ce qui est notre cas, et Playwright donne le vrai rendu mobile que `chrome --headless` fausse à 500 px.
+
+---
+
+## [veto possible] Ambiance LNB : tableau de score et états de la semaine (2026-11-06)
+
+**Contexte** : l'utilisateur veut se sentir en LNB dès l'ouverture et ressentir la tension des matchs. Maquette validée : `design/ambiance-lnb.html`.
+
+**Décision** :
+- L'app reste claire. La tension vient d'un tableau de score LED posé sur le papier, sans écran sombre.
+- États calculés depuis le vrai calendrier : calme, montée (24 h avant le verrou), pression (3 dernières heures), soirée de match, verdict. Jamais un jour fixe.
+- Rouge sirène `#B3281A`, réservé au chrono et au « en cours ».
+- Pas de direct pour la beta : points sous scellé, puis dévoilement après le relevé de la nuit. L'heure affichée vient du cron : 23h UTC donne minuit l'hiver et 1h l'été.
+- « Alex n'a pas encore posé son cinq » reste affiché.
+- Match reporté : règle actuelle conservée pour la beta.
+
+**Alternatives écartées** : polling Sofascore pendant les matchs (risque sur le quota ScraperAPI, à revoir après la beta) ; verdict en plein écran sombre (contredit la demande d'une app claire).
+
+**Raison** : un seul objet fort et un rythme lié à la semaine, avec les données déjà disponibles.
+
+---
+
+## [veto possible] Migration de toute l'app au thème clair (2026-11-07)
+
+**Contexte** : l'utilisateur veut juger le design dans la vraie app avant la ligue test.
+
+**Décision** :
+- Couleurs nommées par rôle dans `tailwind.config.js` (`paper`, `surface`, `ink`, `brand`...). `slate` n'est plus utilisé.
+- L'accueil ouvre sur le duel du joueur, avec le tableau de score.
+- Icônes dessinées (`components/Icon.tsx`), plus aucun emoji dans l'interface.
+- `ClientOnly` à la racine : la session vit dans le navigateur, donc pas de rendu serveur des écrans.
+- Budget du draft en euros, plus crédible que le dollar pour la LNB.
+- Draft et loterie gardent leurs 3 tiers (Élite, Star, Basique), habillés avec les matières. Le passage à 4 tiers changerait la composition des packs : à trancher après la ligue test.
+
+**Alternatives écartées** : reprendre les pages à la main (long, plus de risques d'oubli) ; garder `slate` en inversant ses valeurs (rapide mais trompeur à relire).
+
+**Raison** : la migration par rôle garde une seule source de vérité pour la palette.

@@ -28,12 +28,12 @@ export default function ScoringGrid() {
       <div className="card grid grid-cols-3 gap-x-3 gap-y-4 text-center">
         {scoringItems().map(i => (
           <div key={i.label}>
-            <div className={`font-black text-lg ${i.negative ? 'text-red-400' : 'text-brand'}`}>{i.value}</div>
-            <div className="text-xs text-slate-500">{i.label}</div>
+            <div className={`font-black text-lg ${i.negative ? 'text-red-700' : 'text-brand'}`}>{i.value}</div>
+            <div className="text-xs text-muted">{i.label}</div>
           </div>
         ))}
       </div>
-      <p className="text-xs text-slate-500 text-center mt-2">Aucun bonus double-double ni triple-double.</p>
+      <p className="text-xs text-muted text-center mt-2">Aucun bonus double-double ni triple-double.</p>
     </>
   );
 }

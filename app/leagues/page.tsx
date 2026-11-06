@@ -66,8 +66,8 @@ export default function LeaguesPage() {
 
   const statusBadge = (s: string) => {
     if (s === 'in_progress') return <span className="text-xs bg-brand/20 text-brand font-bold px-2 py-0.5 rounded-full">Draft live</span>;
-    if (s === 'completed') return <span className="text-xs bg-green-500/20 text-green-400 font-bold px-2 py-0.5 rounded-full">En saison</span>;
-    return <span className="text-xs bg-slate-700 text-slate-400 font-bold px-2 py-0.5 rounded-full">En attente</span>;
+    if (s === 'completed') return <span className="text-xs bg-green-500/20 text-green-700 font-bold px-2 py-0.5 rounded-full">En saison</span>;
+    return <span className="text-xs bg-raised text-ink2 font-bold px-2 py-0.5 rounded-full">En attente</span>;
   };
 
   return (
@@ -81,28 +81,28 @@ export default function LeaguesPage() {
 
         <div className="px-4 mt-6">
           {loading ? (
-            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="card h-28 animate-pulse bg-slate-800/50" />)}</div>
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="card h-28 animate-pulse bg-surface/50" />)}</div>
           ) : loadError ? (
             <div className="text-center py-12">
-              <p className="text-red-400 text-sm mb-3">{loadError}</p>
+              <p className="text-red-700 text-sm mb-3">{loadError}</p>
               <button className="btn-secondary max-w-xs" onClick={() => { setLoading(true); load(); }}>Réessayer</button>
             </div>
           ) : leagues.length === 0 ? (
-            <div className="text-center py-16 text-slate-500"><div className="text-5xl mb-4">🏆</div><p>Aucune ligue pour l'instant</p></div>
+            <div className="text-center py-16 text-muted"><p>Aucune ligue pour l'instant</p></div>
           ) : (
             <div className="space-y-3">
               {leagues.map(l => (
                 <Link key={l.id} href={`/leagues/${l.id}`} className="card block active:scale-[0.98] transition-transform">
                   <div className="flex items-start justify-between mb-2">
-                    <span className="font-bold text-slate-100 text-base">{l.name}</span>
+                    <span className="font-bold text-ink text-base">{l.name}</span>
                     {statusBadge(l.draft_status)}
                   </div>
-                  <div className="text-sm text-slate-400 space-y-1">
-                    <div>🎽 Mon équipe : <span className="text-slate-200">{l.team_name}</span></div>
+                  <div className="text-sm text-ink2 space-y-1">
+                    <div>Mon équipe : <span className="text-ink">{l.team_name}</span></div>
                     <div className="flex items-center gap-3">
-                      <span>👥 {l.member_count} équipes</span>
+                      <span>{l.member_count} équipes</span>
                       <span>·</span>
-                      <span className="font-mono">🔑 {l.invite_code}</span>
+                      <span className="font-mono">{l.invite_code}</span>
                     </div>
                   </div>
                 </Link>
@@ -115,8 +115,8 @@ export default function LeaguesPage() {
       {modal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end justify-center"
           onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
-          <div className="bg-slate-800 border border-slate-700 rounded-t-3xl w-full max-w-[480px] p-6 pb-10 space-y-4">
-            <h2 className="text-xl font-black text-slate-100">{modal === 'create' ? 'Créer une ligue' : 'Rejoindre une ligue'}</h2>
+          <div className="bg-surface border border-line rounded-t-3xl w-full max-w-[480px] p-6 pb-10 space-y-4">
+            <h2 className="text-xl font-black text-ink">{modal === 'create' ? 'Créer une ligue' : 'Rejoindre une ligue'}</h2>
             {modal === 'create' && (
               <input className="input-field" placeholder="Nom de la ligue (ex: Les Cobras)" value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -127,7 +127,7 @@ export default function LeaguesPage() {
             )}
             <input className="input-field" placeholder="Nom de ton équipe" value={form.teamName}
               onChange={e => setForm(f => ({ ...f, teamName: e.target.value }))} />
-            {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>}
+            {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-700 text-sm">{error}</div>}
             <button className="btn-primary" disabled={busy} onClick={submit}>{busy ? '…' : modal === 'create' ? 'Créer la ligue' : 'Rejoindre'}</button>
             <button className="btn-secondary" onClick={() => setModal(null)}>Annuler</button>
           </div>

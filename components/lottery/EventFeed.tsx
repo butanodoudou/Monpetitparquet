@@ -10,10 +10,10 @@ export default function EventFeed({ state, nowMs }: { state: LotteryState; nowMs
   return (
     <ul className="space-y-2 text-sm" aria-live="polite">
       {events.map(e => (
-        <li key={e.pick} className="flex gap-3 text-slate-300 leading-snug">
-          <span className="text-xs text-slate-500 w-14 shrink-0 pt-0.5">{relTime(e.taken_at, nowMs)}</span>
+        <li key={e.pick} className="flex gap-3 text-ink2 leading-snug">
+          <span className="text-xs text-muted w-14 shrink-0 pt-0.5">{relTime(e.taken_at, nowMs)}</span>
           <span>
-            <b className="font-semibold text-slate-100">{e.username}</b> a pris{' '}
+            <b className="font-semibold text-ink">{e.username}</b> a pris{' '}
             {e.chosen
               ? <span className={`font-semibold ${tierText(e.chosen.tier)}`}>{e.chosen.name} ({tierLabel(e.chosen.tier)})</span>
               : 'un joueur'}
@@ -22,8 +22,8 @@ export default function EventFeed({ state, nowMs }: { state: LotteryState; nowMs
         </li>
       ))}
       {state.session?.started_at && (
-        <li className="flex gap-3 text-slate-300 leading-snug">
-          <span className="text-xs text-slate-500 w-14 shrink-0 pt-0.5">{relTime(state.session.started_at, nowMs)}</span>
+        <li className="flex gap-3 text-ink2 leading-snug">
+          <span className="text-xs text-muted w-14 shrink-0 pt-0.5">{relTime(state.session.started_at, nowMs)}</span>
           <span>Ordre tiré.{firstName ? ` ${firstName} passe en premier.` : ''}</span>
         </li>
       )}

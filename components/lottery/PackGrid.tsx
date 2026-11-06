@@ -24,7 +24,7 @@ export default function PackGrid({ state, canPick, onPick }: Props) {
           return (
             <PackArt key={p.id} used className="aspect-[3/4] flex flex-col justify-end p-2">
               <div className="relative text-[11px] leading-tight">
-                <div className="font-semibold text-slate-200 truncate">{nameById[p.taken_by] ?? '?'}</div>
+                <div className="font-semibold text-ink truncate">{nameById[p.taken_by] ?? '?'}</div>
                 {p.chosen && <div className={`truncate ${tierText(p.chosen.tier)}`}>{p.chosen.name}</div>}
               </div>
             </PackArt>
@@ -32,8 +32,8 @@ export default function PackGrid({ state, canPick, onPick }: Props) {
         }
         if (p.opened) {
           return (
-            <PackArt key={p.id} className="aspect-[3/4] flex flex-col items-center justify-end pb-2 !border-amber-500/60">
-              <span className="relative text-[11px] text-amber-300 font-semibold text-center leading-tight px-1">
+            <PackArt key={p.id} className="aspect-[3/4] flex flex-col items-center justify-end pb-2 !border-brand/60">
+              <span className="relative text-[11px] text-brand font-semibold text-center leading-tight px-1">
                 Ouvert par {p.opened_by ? nameById[p.opened_by] ?? '?' : '?'}
               </span>
             </PackArt>

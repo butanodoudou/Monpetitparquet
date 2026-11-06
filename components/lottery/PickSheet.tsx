@@ -11,7 +11,12 @@ import { useRemainingMs } from './useLottery';
 
 type Stage = 'closed' | 'opening' | 'reveal' | 'error';
 
-const TIER_BG: Record<AuctionTier, string> = { elite: '#581c87', star: '#713f12', basique: '#334155' };
+// Matières de DESIGN.md : l'Élite en encre, la Star en or, le Basique en argent brossé.
+const TIER_FACE: Record<AuctionTier, { bg: string; fg: string; sub: string }> = {
+  elite: { bg: 'linear-gradient(160deg,#1C2142,#10131F 70%)', fg: '#F4F2FB', sub: '#C9C4E8' },
+  star: { bg: 'linear-gradient(150deg,#FAF0CF 0%,#EDD28A 48%,#F6E6B0 100%)', fg: '#3B2906', sub: '#6B4A08' },
+  basique: { bg: 'repeating-linear-gradient(90deg,rgba(255,255,255,.38) 0 1px,rgba(255,255,255,0) 1px 3px),linear-gradient(160deg,#E8ECF0,#CBD3DB)', fg: '#17202A', sub: '#465260' },
+};
 const initials = (n: string) => n.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
 interface Props {
@@ -123,19 +128,19 @@ export default function PickSheet({ leagueId, state, packId, now, onClose, onCon
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-label="Ouverture de ton pack"
-      style={{ background: 'linear-gradient(#020617e6,#020617f7)' }}>
+      style={{ background: '#F2F4F7' }}>
       <div className="mx-auto max-w-[480px] min-h-full">
         <div className="flex items-center justify-between px-4 h-14">
           <div className="text-sm">
-            <span className="text-slate-400">Pack {packNumber || '?'}</span>
-            <span className="text-slate-600 mx-1">/</span>
+            <span className="text-ink2">Pack {packNumber || '?'}</span>
+            <span className="text-muted mx-1">/</span>
             <span className="font-semibold">pick {session.current_pick}</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xl font-bold ${secs < 10 ? 'text-red-400 animate-pulse' : 'text-amber-400'}`} style={NUM_STYLE}>{secs} s</span>
+            <span className={`text-xl font-bold ${secs < 10 ? 'text-red-700 animate-pulse' : 'text-brand'}`} style={NUM_STYLE}>{secs} s</span>
             {stage === 'closed' && (
               <button type="button" onClick={onClose} aria-label="Fermer"
-                className="text-slate-400 text-2xl leading-none px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">×</button>
+                className="text-ink2 text-2xl leading-none px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">×</button>
             )}
           </div>
         </div>
@@ -144,14 +149,14 @@ export default function PickSheet({ leagueId, state, packId, now, onClose, onCon
           {stage === 'closed' && (
             <div className="text-center pt-6">
               <p className="text-lg font-bold">Ton pack est prêt</p>
-              <p className="text-sm text-slate-400 mt-1">Touche-le pour l&apos;ouvrir. 5 joueurs dedans, tu en gardes un.</p>
+              <p className="text-sm text-ink2 mt-1">Touche-le pour l&apos;ouvrir. 5 joueurs dedans, tu en gardes un.</p>
               <motion.button type="button" onClick={openPack} aria-label="Ouvrir le pack"
                 animate={reduce ? undefined : { rotate: [0, -1.5, 0, 1.5, 0] }}
                 transition={{ duration: 0.5, repeat: Infinity }}
                 className="mx-auto mt-8 block w-56 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">
                 <PackArt className="aspect-[3/4] grid place-items-center"><PackNumber n={packNumber} size={96} /></PackArt>
               </motion.button>
-              <p className="mt-8 text-xs text-slate-500">1 Élite, 2 Star, 2 Basique</p>
+              <p className="mt-8 text-xs text-muted">1 Élite, 2 Star, 2 Basique</p>
             </div>
           )}
 
@@ -173,16 +178,16 @@ export default function PickSheet({ leagueId, state, packId, now, onClose, onCon
 
           {stage === 'error' && (
             <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 mt-4" role="alert">
-              <p className="font-semibold text-red-300">Ce pick n&apos;a pas pu être enregistré</p>
-              <p className="text-sm text-slate-300 mt-1 leading-snug">{error}</p>
+              <p className="font-semibold text-red-700">Ce pick n&apos;a pas pu être enregistré</p>
+              <p className="text-sm text-ink2 mt-1 leading-snug">{error}</p>
               <button type="button" onClick={onClose}
-                className="mt-3 h-10 px-4 rounded-lg bg-slate-800 text-slate-100 text-sm font-semibold">Revenir aux packs</button>
+                className="mt-3 h-10 px-4 rounded-lg bg-surface text-ink text-sm font-semibold">Revenir aux packs</button>
             </div>
           )}
 
           {stage === 'reveal' && (
             <>
-              <p className="text-sm text-slate-400 mb-3" aria-live="polite">{ready ? 'Choisis le joueur que tu gardes.' : 'Découvre tes cartes.'}</p>
+              <p className="text-sm text-ink2 mb-3" aria-live="polite">{ready ? 'Choisis le joueur que tu gardes.' : 'Découvre tes cartes.'}</p>
               <div className="grid grid-cols-6 gap-2">
                 {cards.map((c, i) => (
                   <RevealCard key={c.id} player={c} index={i} up={i < revealed} reduce={!!reduce}
@@ -199,9 +204,9 @@ export default function PickSheet({ leagueId, state, packId, now, onClose, onCon
                       <ReleasePicker roster={state.my_roster} candidates={rule.candidates} value={rel} onChange={setRel}
                         incomingGroup={groupOf(selCard.position)} />
                     )}
-                    {error && <p className="mt-3 text-sm text-red-300" role="alert">{error}</p>}
+                    {error && <p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}
                     <button type="button" onClick={confirm} disabled={!canConfirm}
-                      className={`mt-4 w-full h-12 rounded-xl font-bold transition ${canConfirm ? 'bg-amber-500 text-slate-950 active:scale-[.98]' : 'bg-slate-800 text-slate-500'}`}>
+                      className={`mt-4 w-full h-12 rounded-xl font-bold transition ${canConfirm ? 'bg-brand text-on-accent active:scale-[.98]' : 'bg-surface text-muted'}`}>
                       {busy ? 'Enregistrement…'
                         : rule.releaseRequired && rel === null ? 'Choisis qui relâcher'
                         : rule.releaseRequired && relPlayer ? `Garder ${lastName(selCard.name)}, relâcher ${lastName(relPlayer.name)}`
@@ -237,7 +242,7 @@ function RevealCard({ player: c, index, up, selected, disabled, onClick, reduce 
       className={`relative block w-full overflow-hidden rounded-xl text-left ${disabled && up ? 'opacity-40' : ''} ${selected ? 'outline outline-2 outline-offset-2 outline-amber-500' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500`}
       style={{
         padding: big ? 12 : '8px 8px 9px', border: `1.5px solid ${color}`,
-        background: `linear-gradient(160deg,${TIER_BG[c.tier]},#0f172a 75%)`, backfaceVisibility: 'hidden',
+        background: TIER_FACE[c.tier].bg, color: TIER_FACE[c.tier].fg, backfaceVisibility: 'hidden',
       }}>
       {up && c.tier === 'elite' && !reduce && (
         <motion.span aria-hidden className="absolute inset-0 pointer-events-none"
@@ -246,22 +251,22 @@ function RevealCard({ player: c, index, up, selected, disabled, onClick, reduce 
       )}
       <span className="flex items-start justify-between">
         <span>
-          <span className={`block font-extrabold leading-none text-white ${big ? 'text-5xl' : 'text-3xl'}`} style={NUM_STYLE}>{fmt1(c.season_avg_fantasy)}</span>
-          <span className="block text-[10px] text-slate-300 mt-0.5">moy. fantasy</span>
+          <span className={`block font-extrabold leading-none ${big ? 'text-5xl' : 'text-3xl'}`} style={NUM_STYLE}>{fmt1(c.season_avg_fantasy)}</span>
+          <span className="block text-[10px] mt-0.5" style={{ color: TIER_FACE[c.tier].sub }}>moy. fantasy</span>
         </span>
-        <span className={`text-sm font-bold px-1.5 rounded bg-slate-950/50 ${tierText(c.tier)}`} style={NUM_STYLE}>{c.position ?? '-'}</span>
+        <span className={`text-sm font-bold px-1.5 rounded bg-black/10`} style={NUM_STYLE}>{c.position ?? '-'}</span>
       </span>
       {c.photo_url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={c.photo_url} alt="" className={`block mx-auto my-2 rounded-full object-cover bg-slate-950/50 ${big ? 'w-16 h-16' : 'w-11 h-11'}`} />
+        <img src={c.photo_url} alt="" className={`block mx-auto my-2 rounded-full object-cover bg-paper/50 ${big ? 'w-16 h-16' : 'w-11 h-11'}`} />
       ) : (
-        <span className={`mx-auto my-2 rounded-full bg-slate-950/50 grid place-items-center font-bold text-slate-200 ${big ? 'w-16 h-16 text-2xl' : 'w-11 h-11 text-lg'}`} style={NUM_STYLE}>
+        <span className={`mx-auto my-2 rounded-full bg-paper/50 grid place-items-center font-bold text-ink ${big ? 'w-16 h-16 text-2xl' : 'w-11 h-11 text-lg'}`} style={NUM_STYLE}>
           {initials(c.name)}
         </span>
       )}
-      <span className={`block font-semibold leading-tight text-white ${big ? 'text-[15px]' : 'text-[12px]'}`}>{c.name}</span>
-      <span className="block text-[11px] text-slate-300 truncate">{c.team}</span>
-      <span className={`block mt-1 text-[11px] font-semibold ${tierText(c.tier)}`}>{tierLabel(c.tier)}</span>
+      <span className={`block font-semibold leading-tight ${big ? 'text-[15px]' : 'text-[12px]'}`}>{c.name}</span>
+      <span className="block text-[11px] truncate" style={{ color: TIER_FACE[c.tier].sub }}>{c.team}</span>
+      <span className="block mt-1 text-[11px] font-semibold" style={{ color: TIER_FACE[c.tier].sub }}>{tierLabel(c.tier)}</span>
     </motion.button>
   );
 
@@ -281,10 +286,10 @@ function RevealCard({ player: c, index, up, selected, disabled, onClick, reduce 
         {face}
         <div aria-hidden className="absolute inset-0 rounded-xl grid place-items-center"
           style={{
-            transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', border: '1.5px solid #475569',
-            background: 'repeating-linear-gradient(135deg,#1e293b 0 6px,#172033 6px 12px)',
+            transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', border: '1px solid #B07A1E',
+            background: 'repeating-linear-gradient(135deg,#1B2433 0 6px,#141B26 6px 12px)',
           }}>
-          <span className="text-slate-500 text-3xl font-bold" style={NUM_STYLE}>MPP</span>
+          <span className="text-muted text-3xl font-bold" style={NUM_STYLE}>MPP</span>
         </div>
       </motion.div>
     </div>
@@ -301,12 +306,12 @@ function ReleasePicker({ roster, candidates, value, onChange, incomingGroup }: {
   return (
     <>
       <h3 className="mt-5 text-sm font-semibold">Qui part pour faire de la place ?</h3>
-      <p className="text-xs text-slate-400 mb-2 leading-snug">
+      <p className="text-xs text-ink2 mb-2 leading-snug">
         {incomingGroup
           ? `Ton équipe garde ${ROSTER_SLOTS.arriere} arrières, ${ROSTER_SLOTS.sf} ailiers et ${ROSTER_SLOTS.grand} intérieurs. Relâche un joueur de ce poste (${GROUP_LABELS[incomingGroup].toLowerCase()}) : il redevient libre.`
           : 'Relâche un joueur : il redevient libre.'}
       </p>
-      <ul className="rounded-xl border border-slate-800 divide-y divide-slate-800 bg-slate-900/70 overflow-hidden">
+      <ul className="rounded-xl border border-line divide-y divide-line bg-paper/70 overflow-hidden">
         {sorted.map(r => {
           const ok = candidates.indexOf(r.id) !== -1;
           const on = value === r.id;
@@ -315,13 +320,13 @@ function ReleasePicker({ roster, candidates, value, onChange, incomingGroup }: {
             <li key={r.id}>
               <button type="button" disabled={!ok} onClick={() => onChange(r.id)} aria-pressed={on}
                 className={`w-full flex items-center gap-3 px-3 py-2 text-left ${on ? 'bg-red-500/15' : ''} ${ok ? '' : 'opacity-35'}`}>
-                <span className="w-1.5 h-8 rounded-full bg-slate-500" aria-hidden />
+                <span className="w-1.5 h-8 rounded-full bg-line-strong" aria-hidden />
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-medium truncate">{r.name}</span>
-                  <span className="block text-xs text-slate-400 truncate">{g ? GROUP_LABELS[g] : r.position ?? '-'} - {r.team}</span>
+                  <span className="block text-xs text-ink2 truncate">{g ? GROUP_LABELS[g] : r.position ?? '-'} - {r.team}</span>
                 </span>
                 <span className="text-lg font-bold" style={NUM_STYLE}>{fmt1(r.season_avg_fantasy)}</span>
-                <span className={`w-5 h-5 rounded-full border grid place-items-center text-[10px] text-white ${on ? 'bg-red-500 border-red-500' : 'border-slate-600'}`} aria-hidden>
+                <span className={`w-5 h-5 rounded-full border grid place-items-center text-[10px] text-white ${on ? 'bg-red-500 border-red-500' : 'border-line-strong'}`} aria-hidden>
                   {on ? '✓' : ''}
                 </span>
               </button>

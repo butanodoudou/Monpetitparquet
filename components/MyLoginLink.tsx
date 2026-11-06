@@ -26,13 +26,13 @@ export default function MyLoginLink() {
   return (
     <div className="card space-y-3">
       <div>
-        <div className="font-semibold text-slate-100 text-sm">Mon lien personnel</div>
-        <p className="text-xs text-slate-400 mt-1">Il te reconnecte sur un autre appareil. Ne le partage pas : il donne accès à ton compte.</p>
+        <div className="font-semibold text-ink text-sm">Mon lien personnel</div>
+        <p className="text-xs text-ink2 mt-1">Il te reconnecte sur un autre appareil. Ne le partage pas : il donne accès à ton compte.</p>
       </div>
       {link
         ? <LoginLinkBox link={link} shareText="Mon lien Mon Petit Parquet, à garder pour moi" />
         : <button type="button" onClick={show} disabled={loading} className="btn-secondary">{loading ? '…' : 'Afficher mon lien'}</button>}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-700">{error}</p>}
     </div>
   );
 }

@@ -21,7 +21,7 @@ export default function DrawOrderList({ state, meId, stagger }: Props) {
   const order = state.order.slice().sort((a, b) => a.pick - b.pick);
 
   return (
-    <ol className="rounded-2xl border border-slate-800 divide-y divide-slate-800 overflow-hidden">
+    <ol className="rounded-2xl border border-line divide-y divide-line overflow-hidden">
       {order.map((o, i) => {
         const m = byId[o.user_id];
         const me = o.user_id === meId;
@@ -32,14 +32,14 @@ export default function DrawOrderList({ state, meId, stagger }: Props) {
             initial={stagger ? (reduce ? { opacity: 0 } : { opacity: 0, x: -12 }) : false}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.45, delay: stagger ? (i * LOTTERY_ORDER_STEP_MS) / 1000 : 0, ease: 'easeOut' }}
-            className={`flex items-center gap-3 px-3 py-2.5 ${cur ? 'bg-amber-500/10' : 'bg-slate-900/60'}`}
+            className={`flex items-center gap-3 px-3 py-2.5 ${cur ? 'bg-brand/10' : 'bg-paper/60'}`}
             aria-current={cur ? 'step' : undefined}>
-            <span className={`w-6 text-xl font-bold ${cur ? 'text-amber-400' : 'text-slate-500'}`} style={NUM_STYLE}>{o.pick}</span>
+            <span className={`w-6 text-xl font-bold ${cur ? 'text-brand' : 'text-muted'}`} style={NUM_STYLE}>{o.pick}</span>
             <Avatar name={m?.username ?? '?'} color={m?.avatar_color} me={me} />
-            <span className={`flex-1 font-medium truncate ${past ? 'text-slate-500' : ''}`}>
-              {m?.username ?? '?'}{me && <span className="text-xs text-amber-400"> (toi)</span>}
+            <span className={`flex-1 font-medium truncate ${past ? 'text-muted' : ''}`}>
+              {m?.username ?? '?'}{me && <span className="text-xs text-brand"> (toi)</span>}
             </span>
-            <span className={`text-xs ${cur ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+            <span className={`text-xs ${cur ? 'text-brand font-semibold' : 'text-muted'}`}>
               {cur ? 'Son tour' : past ? 'A pioché' : 'En attente'}
             </span>
           </motion.li>

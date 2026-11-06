@@ -13,7 +13,7 @@ interface Props {
   leagueName?: string;
 }
 
-const chevron = <span className="text-slate-500 text-xl" aria-hidden>&#8250;</span>;
+const chevron = <span className="text-muted text-xl" aria-hidden>&#8250;</span>;
 
 /**
  * Bandeau compact vers la loterie, 3 variantes : programmée, en direct, terminée.
@@ -63,11 +63,11 @@ export default function LotteryBanner({ leagueId, userId, leagueName }: Props) {
 
   if (session.status === 'scheduled') {
     return (
-      <Link href={href} className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 active:scale-[0.98] transition-transform">
-        <span className="w-10 h-10 rounded-lg bg-amber-500/15 text-amber-400 grid place-items-center text-sm font-black" aria-hidden>LUN</span>
+      <Link href={href} className="flex items-center gap-3 rounded-2xl border border-line bg-paper px-4 py-3 active:scale-[0.98] transition-transform">
+        <span className="w-10 h-10 rounded-lg bg-brand/15 text-brand grid place-items-center text-sm font-black" aria-hidden>LUN</span>
         <span className="flex-1 min-w-0 leading-tight">
-          <span className="block font-semibold text-slate-100">Loterie du lundi</span>
-          <span className="block text-xs text-slate-400 truncate">
+          <span className="block font-semibold text-ink">Loterie du lundi</span>
+          <span className="block text-xs text-ink2 truncate">
             {prefix}{mine ? `Tu as ${mine.tickets} ticket${mine.tickets > 1 ? 's' : ''} sur ${state.total_tickets}` : 'Le tirage est prêt'}
           </span>
         </span>
@@ -80,17 +80,17 @@ export default function LotteryBanner({ leagueId, userId, leagueName }: Props) {
     const myTurn = state.current_user_id === userId;
     const current = state.members.find(m => m.user_id === state.current_user_id);
     return (
-      <Link href={href} className="flex items-center gap-3 rounded-2xl border border-amber-500/60 bg-gradient-to-r from-amber-500/20 to-slate-900 px-4 py-3 active:scale-[0.98] transition-transform">
-        <span className="w-10 h-10 rounded-lg bg-amber-500 text-slate-950 grid place-items-center text-xl font-black tabular-nums" aria-hidden>{secs}</span>
+      <Link href={href} className="flex items-center gap-3 rounded-2xl border border-brand/60 bg-gradient-to-r from-amber-500/20 to-paper px-4 py-3 active:scale-[0.98] transition-transform">
+        <span className="w-10 h-10 rounded-lg bg-brand text-on-accent grid place-items-center text-xl font-black tabular-nums" aria-hidden>{secs}</span>
         <span className="flex-1 min-w-0 leading-tight">
-          <span className="flex items-center gap-1.5 font-semibold text-slate-100">
+          <span className="flex items-center gap-1.5 font-semibold text-ink">
             <i className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden />Loterie en direct
           </span>
-          <span className="block text-xs text-amber-200 truncate">
+          <span className="block text-xs text-brand truncate">
             {prefix}{myTurn ? "C'est ton tour, ouvre un pack" : current ? `Tour de ${current.username}` : 'Rejoins le tirage'}
           </span>
         </span>
-        <span className="text-amber-400 text-xl" aria-hidden>&#8250;</span>
+        <span className="text-brand text-xl" aria-hidden>&#8250;</span>
       </Link>
     );
   }
@@ -98,11 +98,11 @@ export default function LotteryBanner({ leagueId, userId, leagueName }: Props) {
   // done
   const myEvent = state.events.find(e => e.user_id === userId);
   return (
-    <Link href={href} className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 active:scale-[0.98] transition-transform">
-      <span className="w-10 h-10 rounded-lg bg-purple-500/15 text-purple-400 grid place-items-center text-sm font-black" aria-hidden>FIN</span>
+    <Link href={href} className="flex items-center gap-3 rounded-2xl border border-line bg-paper px-4 py-3 active:scale-[0.98] transition-transform">
+      <span className="w-10 h-10 rounded-lg bg-purple-500/15 text-ame grid place-items-center text-sm font-black" aria-hidden>FIN</span>
       <span className="flex-1 min-w-0 leading-tight">
-        <span className="block font-semibold text-slate-100">Loterie terminée</span>
-        <span className="block text-xs text-slate-400 truncate">
+        <span className="block font-semibold text-ink">Loterie terminée</span>
+        <span className="block text-xs text-ink2 truncate">
           {prefix}
           {myEvent?.chosen
             ? <>Tu as pris <span className={tierText(myEvent.chosen.tier)}>{myEvent.chosen.name}</span> ({tierLabel(myEvent.chosen.tier)})</>

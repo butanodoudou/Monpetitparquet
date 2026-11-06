@@ -13,15 +13,15 @@ export default function Recap({ state, meId }: { state: LotteryState; meId: stri
         const me = e.user_id === meId;
         return (
           <li key={e.pick}
-            className={`rounded-xl border p-3 flex items-center gap-3 ${me ? 'border-amber-500/50 bg-amber-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
-            <span className="w-5 text-lg font-bold text-slate-500" style={NUM_STYLE}>{e.pick}</span>
+            className={`rounded-xl border p-3 flex items-center gap-3 ${me ? 'border-brand/50 bg-brand/5' : 'border-line bg-paper/60'}`}>
+            <span className="w-5 text-lg font-bold text-muted" style={NUM_STYLE}>{e.pick}</span>
             <Avatar name={e.username} color={colorById[e.user_id]} me={me} />
             <div className="flex-1 min-w-0">
               <div className="text-sm">
                 <span className="font-semibold">{e.username}</span> a pris{' '}
                 <span className={`font-semibold ${e.chosen ? tierText(e.chosen.tier) : ''}`}>{e.chosen?.name ?? 'un joueur'}</span>
               </div>
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-ink2">
                 {e.released ? `Relâché : ${e.released.name}` : 'Équipe incomplète, personne relâché'}
               </div>
             </div>

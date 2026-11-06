@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import ClientOnly from '@/components/ClientOnly';
+import { bodyFont, displayFont } from '@/lib/fonts';
 
 export const metadata: Metadata = {
   title: 'Mon Petit Parquet',
@@ -7,20 +9,18 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0F172A',
+  themeColor: '#F2F4F7',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" className={`${bodyFont.variable} ${displayFont.variable}`}>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
       </head>
       <body>
         <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100dvh', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-          {children}
+          <ClientOnly>{children}</ClientOnly>
         </div>
       </body>
     </html>

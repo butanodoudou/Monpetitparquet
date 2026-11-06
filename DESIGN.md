@@ -1,6 +1,6 @@
 # Système visuel
 
-Référence visuelle : `design/cartes-raretes.html`. Écran déjà migré : `app/auth/` (`auth.css`). Le reste de l'app est encore sur l'ancien thème sombre, à migrer écran par écran.
+Référence visuelle : `design/cartes-raretes.html`. Toute l'app suit cette palette, nommée par rôle dans `tailwind.config.js`.
 
 ## Direction
 
@@ -21,6 +21,8 @@ Clair, haut de gamme, objet de collection. Mode clair uniquement.
 | Laiton doux | `#F3E7CC` | Halo de focus, fonds doux |
 | Améthyste | `#5B3FA6` | Élite |
 | Cuivre | `#B58A66` | Bronze |
+| Sirène | `#B3281A` | Uniquement le chrono des dernières heures et le « en cours » |
+| LED | `#EDBE55` | Chiffres du tableau de score |
 
 ## Typographie
 
@@ -38,6 +40,10 @@ Chaque tier combine une matière, un cadre, une jauge de losanges et son nom éc
 | Élite | Fond encre, bordure nacrée | Reflet qui suit le doigt | 4 |
 
 Le glow est réservé à l'Élite.
+
+## Tableau de score
+
+Le seul objet sombre de l'app, avec la carte Élite, et la source de la tension. Il suit le moment de la semaine (`lib/week-phase.ts`) : éteint au calme, chrono rouge dans les 3 dernières heures, points sous scellé en soirée de match, verdict après la clôture. Référence : `design/ambiance-lnb.html`.
 
 ## Mouvement
 

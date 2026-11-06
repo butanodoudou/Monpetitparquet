@@ -1,4 +1,5 @@
 'use client';
+import { formatPoints } from '@/lib/format';
 import type { CSSProperties } from 'react';
 import { AUCTION_TIER_CONFIG, type AuctionTier } from '@/lib/fantasy';
 
@@ -9,7 +10,7 @@ export const NUM_STYLE: CSSProperties = {
 };
 
 /** 12,3 -> "12,3" (virgule française). */
-export const fmt1 = (n: number) => n.toFixed(1).replace('.', ',');
+export const fmt1 = (n: number) => formatPoints(n).replace('.', ',');
 
 /** Ordre de révélation d'un pack : basique, basique, star, star, élite (l'élite arrive en dernier). */
 export const TIER_REVEAL_RANK: Record<AuctionTier, number> = { basique: 0, star: 1, elite: 2 };
@@ -21,15 +22,15 @@ export const tierBox = (t: AuctionTier) => AUCTION_TIER_CONFIG[t].bg;
 
 /** Couleur de halo selon le tier, pour les cartes révélées. */
 export const TIER_BORDER: Record<AuctionTier, string> = {
-  elite: '#c084fc',
-  star: '#facc15',
-  basique: '#94a3b8',
+  elite: '#5B3FA6',
+  star: '#B8892B',
+  basique: '#8D99A6',
 };
 
 export function Avatar({ name, color, me, size = 32 }: { name: string; color?: string; me?: boolean; size?: number }) {
   return (
     <span
-      className={`shrink-0 rounded-full grid place-items-center font-bold ${me ? 'bg-amber-500 text-slate-950' : 'text-slate-900'}`}
+      className={`shrink-0 rounded-full grid place-items-center font-bold ${me ? 'bg-brand text-ink' : 'text-ink'}`}
       style={{ width: size, height: size, fontSize: size * 0.4, ...(me ? {} : { backgroundColor: color ?? '#94a3b8' }) }}
       aria-hidden
     >

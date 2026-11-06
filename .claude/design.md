@@ -104,5 +104,5 @@ score_adverse_final = score_adverse × ton_defensive_mult
 
 ## Patterns UI
 - Mobile-first, max-width 480px centré
-- Direction : clair et haut de gamme, voir `DESIGN.md` à la racine. `app/auth/` est migré, le reste encore en sombre (slate, ambre `--brand`, Inter)
+- Direction : clair et haut de gamme, voir `DESIGN.md` à la racine
 - Pas de bibliothèque de composants — Tailwind pur

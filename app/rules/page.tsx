@@ -14,7 +14,7 @@ const minDef = 1 - MODIFIERS.defenseMaxReduction;
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="px-4 mt-6">
-      <h2 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3">{title}</h2>
+      <h2 className="text-ink2 text-xs font-bold mb-3">{title}</h2>
       {children}
     </section>
   );
@@ -35,34 +35,34 @@ export default function RulesPage() {
         </Section>
 
         <Section title="Ton cinq de départ">
-          <div className="card text-sm text-slate-300 leading-snug space-y-1.5">
+          <div className="card text-sm text-ink2 leading-snug space-y-1.5">
             <p>
               Ton équipe compte {ROSTER_SIZE} joueurs : {ROSTER_SLOTS.arriere} arrières, {ROSTER_SLOTS.sf} ailiers et {ROSTER_SLOTS.grand} intérieurs.
               Tu alignes 5 titulaires en 2-1-2 : {STARTER_SLOTS.arriere} arrières, {STARTER_SLOTS.sf} ailier, {STARTER_SLOTS.grand} intérieurs.
             </p>
-            <p className="text-slate-400">Le cinq est verrouillé au premier coup d&apos;envoi de la journée.</p>
+            <p className="text-ink2">Le cinq est verrouillé au premier coup d&apos;envoi de la journée.</p>
           </div>
         </Section>
 
         <Section title="Modificateurs">
-          <div className="card text-sm text-slate-300 leading-snug space-y-3">
+          <div className="card text-sm text-ink2 leading-snug space-y-3">
             <p>
-              <b className="text-slate-100">Chimie</b> : +{MODIFIERS.chemistryClubPair} points par paire de titulaires du même club,
+              <b className="text-ink">Chimie</b> : +{MODIFIERS.chemistryClubPair} points par paire de titulaires du même club,
               +{MODIFIERS.chemistryNationalityPair} par paire de même nationalité, plafonné à +{MODIFIERS.chemistryCap}.
             </p>
             <p>
-              <b className="text-slate-100">Weekend</b> : ×{fr(MODIFIERS.weekendMultiplier)} sur ton score si au moins {MODIFIERS.weekendMinWinningTeams} clubs
+              <b className="text-ink">Weekend</b> : ×{fr(MODIFIERS.weekendMultiplier)} sur ton score si au moins {MODIFIERS.weekendMinWinningTeams} clubs
               différents de tes titulaires gagnent.
             </p>
             <p>
-              <b className="text-slate-100">Malus défensif</b> : les contres et interceptions de tes titulaires réduisent le score de ton adversaire,
+              <b className="text-ink">Malus défensif</b> : les contres et interceptions de tes titulaires réduisent le score de ton adversaire,
               jusqu&apos;à ×{fr(minDef)} à partir de {MODIFIERS.defenseFullAtRaw} au total.
             </p>
           </div>
         </Section>
 
         <Section title="Loterie du lundi">
-          <ul className="card text-sm text-slate-300 leading-snug space-y-1.5 list-none">
+          <ul className="card text-sm text-ink2 leading-snug space-y-1.5 list-none">
             <li>Chaque lundi, une loterie récompense la semaine écoulée.</li>
             <li>Plus ton classement de la semaine est bas, plus tu as de tickets (de 1 à 10) et de chances de piocher tôt.</li>
             <li>Chacun son tour, tu ouvres un pack fermé de 5 joueurs (1 Élite, 2 Star, 2 Basique) et tu en gardes un.</li>
