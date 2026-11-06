@@ -400,3 +400,85 @@ Points clés :
 - Un worker pour faire avancer la loterie : incompatible avec le serverless et le free tier.
 
 **Raison** : préférer une règle simple et prévisible qui ne gèle jamais la ligue.
+
+---
+
+## [veto possible] Ce qu'on reprend de Sorare (2026-11-05)
+
+**Contexte** : comparaison avec Sorare NBA, de mémoire, sans vérification de leurs règles actuelles. Il fallait décider ce qui rejoint le jeu sans rouvrir le périmètre de la beta.
+
+**Décision** :
+- **Rien de nouveau pour la beta de janvier.** Le périmètre du 2026-10-15 ne bouge pas.
+- **Après la beta, dans cet ordre** :
+  1. **Plafond sur le cinq** : la somme des moyennes récentes des titulaires est plafonnée. À tester en ligue, car il s'ajoute au budget d'enchères du draft et ne doit pas obliger à laisser ses stars sur le banc chaque semaine. Il faut aussi assez de matchs joués pour que la moyenne ait du sens.
+  2. **Une rareté qui compte en jeu** : un bonus de points, porté par les cartes In Form déjà prévues plutôt que par un nouveau système.
+  3. **Marché entre managers** : toujours coupé de la beta, à reprendre ensuite, en monnaie virtuelle uniquement.
+- **Exclus** : l'argent réel, la revente et les NFT/blockchain.
+
+**Alternatives écartées** : ajouter le plafond dès la beta (il faudrait refaire l'équilibrage alors que la boucle de jeu n'a pas encore été testée) ; copier le modèle économique de Sorare (cadre légal français sur les jeux à objets numériques, risque de pay-to-win, aucune utilité technique avec Supabase).
+
+**Raison** : le plafond récompense la connaissance de la LNB, ce qui va bien à des ligues entre amis. Mais la priorité reste de faire tourner l'alpha.
+
+---
+
+## Sofascore via www.sofascore.com et nouveaux essais (2026-11-06)
+
+**Contexte** : avec une clé ScraperAPI valide, `api.sofascore.com` échouait quand même (HTTP 500 du proxy après 36 s, ou page HTML). La sync des joueurs ramenait 0 joueur.
+
+**Décision** :
+- `SOFA_BASE` passe à `https://www.sofascore.com/api/v1`. Testé sur les 6 routes utilisées, en mode standard (1 crédit par requête).
+- `sfFetch` fait jusqu'à 3 essais si le statut est 5xx ou 429, ou si la réponse n'est pas du JSON. Une autre erreur 4xx n'est pas retentée.
+
+**Alternatives écartées** : `premium=true` ou `ultra_premium=true` (bien plus de crédits par requête, non testés car inutiles) ; changer de source de données.
+
+**Raison** : un seul changement d'adresse, sans surcoût. Les essais supplémentaires évitent qu'une réponse ratée fasse tomber une sync de 17 appels.
+
+**Risque connu** : un match de J13 a été joué le 2026-11-03, alors que la journée en cours est la J7. Vérifier que la journée à jouer et la clôture des duels gèrent les matchs avancés.
+
+---
+
+## Sync robuste : club en erreur et moyennes paginées (2026-11-06)
+
+**Contexte** : première vraie sync 2026-27. Une 404 sur l'effectif de Dijon (id 5627) a arrêté la boucle à 10 clubs sur 16. Le calcul des moyennes n'a lu que 1000 performances sur 1098, à cause du plafond de lignes de Supabase.
+
+**Décision** :
+- `sync/players` : un club en erreur est ignoré et signalé. Ses joueurs ne sont pas désactivés.
+- `sync/averages` : lecture paginée par tranches de 1000, avec un tri stable.
+
+**Alternatives écartées** : arrêter toute la désactivation dès qu'un club échoue (une 404 durable bloquerait le nettoyage des effectifs) ; relever le plafond dans la config Supabase (dépendance invisible dans le code).
+
+**Raison** : un club en panne ne doit pas bloquer les quinze autres, et les moyennes alimentent les tiers des cartes.
+
+**Risque connu** : Dijon reste sur son ancien effectif tant que la 404 dure. Les autres lectures de `player_performances` restent à contrôler face au même plafond.
+
+---
+
+## [veto possible] Calendrier à partir de la journée jouable et matchs joués en avance (2026-11-06)
+
+**Contexte** : l'audit de la v0 a montré trois problèmes. Le calendrier partait toujours de la J1, donc une ligue lancée en cours de saison réglait d'un coup des duels sur des matchs joués avant son draft. Un match de J13 joué le 2026-11-03, pendant la J7, faisait afficher la J13 et pouvait clore cette journée avec 2 matchs sur 8. Le classement de la loterie pouvait dépasser le plafond de 1000 lignes de Supabase.
+
+**Décision** :
+- `createLeagueSchedule` (`lib/week-scoring.ts`) remplace les quatre copies de la génération. Les duels démarrent à la prochaine journée jouable, ou à la suivante si elle est verrouillée.
+- La page ligue affiche la première journée de la ligue tant qu'aucun duel n'a été joué.
+- Une journée située après une journée encore ouverte n'est pas close et ne compte pas comme dernière journée jouée.
+- `computeLeagueStats` lit les performances par pages.
+
+**Alternatives écartées** : garder les J1 à J6 en les marquant non jouées (plus de cas à gérer pour rien) ; rattacher le match avancé à la journée où il est joué (il faudrait contredire Sofascore).
+
+**Raison** : sans cela, le classement et les tickets de loterie seraient faux dès le premier jour, pour l'alpha comme pour la beta.
+
+---
+
+## [veto possible] Direction visuelle claire et haut de gamme (2026-11-06)
+
+**Contexte** : l'utilisateur veut une finition haut de gamme et des couleurs plutôt claires. Maquette validée le 2026-11-06 : `design/cartes-raretes.html`.
+
+**Décision** :
+- Mode clair uniquement. Fond `#F2F4F7`, encre `#141B26`, accent laiton `#B07A1E`, polices Fraunces et Hanken Grotesk.
+- Chaque tier a une matière, un cadre, une jauge de losanges et son nom écrit. Le glow est réservé à l'Élite.
+- Un seul système de 4 tiers visibles partout. Impact sur le draft et la loterie à mesurer avant d'y toucher.
+- In Form reste après la beta, avec un bonus de points.
+
+**Alternatives écartées** : garder aussi un mode sombre (deux thèmes à finir) ; garder l'ambre `#F59E0B` (illisible en texte sur fond clair).
+
+**Raison** : sur fond clair, le glow ne fonctionne plus. Les matières donnent un aspect d'objet de collection, et la rareté reste lisible sans la couleur.

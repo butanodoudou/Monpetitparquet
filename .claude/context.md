@@ -84,3 +84,10 @@ CRON_SECRET
 - **Crons** : `sync/results` 23h UTC (résultats + matchs à venir + clôture des duels), `sync/averages` 23h30, `lottery/run` lundi 8h UTC.
 - **Migrations à appliquer dans l'ordre** : 2026-10-31_prod-drift (EN PREMIER : matches.season était integer en prod), 2026-10-08 (NE PAS rejouer), 2026-10-15_auction-tables, 2026-10-30_core-fixes, 2026-10-30_draft-fixes, 2026-10-30_lottery, 2026-10-31_v0-fixes.
 - Coupé de la beta : marché des transferts, trades, In Form, capitaine ×2, notifications push.
+- Après la beta, inspirations Sorare (2026-11-05, voir decisions.md) : plafond sur le cinq, puis rareté via In Form, puis marché en monnaie virtuelle. Pas d'argent réel ni de NFT.
+
+## État au 2026-11-06
+- Sofascore passe par `www.sofascore.com`, `api.sofascore.com` étant bloqué via ScraperAPI.
+- Calendrier des duels : `createLeagueSchedule`, à partir de la prochaine journée jouable.
+- Direction visuelle validée : clair et haut de gamme, maquette `design/cartes-raretes.html`. L'app reste sombre tant que le thème n'est pas intégré. Les sections « Patterns UI » de `design.md` décrivent encore l'ancien thème.
+- `.claude/settings.local.json` contient une ancienne clé en clair : ne pas le commiter.

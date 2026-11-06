@@ -1,0 +1,437 @@
+<!--
+NOTES DEV (maquette, aucun code app touché)
+1. Une seule carte, dimensionnée en container query (cqw) : le même markup sert en planche (165 px), en révélation (260 px) et en mini (105 px). Dans l'app : un composant <PlayerCard variant="board|reveal|mini|row"> et des classes .fcard / .t-* dans globals.css (les matières ne s'écrivent pas en utilitaires Tailwind purs : gradients superposés, bruit SVG, conic-gradient de bordure).
+2. La rareté se lit par 4 signaux indépendants de la teinte : matière (papier plat, métal brossé, feuille d'or guillochée, nacre sur fond encre), cadre (filet simple, filet + biseau, double filet, bordure nacrée), jauge de 4 losanges remplis, nom du palier écrit. Test : bouton "niveaux de gris" sur la planche.
+3. Le glow (ombre colorée + halo) n'existe que pour Élite, et seulement à la révélation + au repos en version très atténuée. Gold a un reflet qui suit le doigt, pas de halo.
+4. Reflet qui suit le toucher : pointermove sur .tilt écrit --mx/--my/--rx/--ry. Sous prefers-reduced-motion : plus d'inclinaison ni de flip (fondu), le reflet reste fixe.
+5. Photos : img.sofascore.com est affichée dans une fenêtre en arche, voilée par un grain et une teinte de palier, avec fondu bas ; ici la photo est simulée par une silhouette. Repli sans photo = gros numéro de maillot. En prod : onError -> état "sans photo".
+6. Rareté cosmétique en beta : aucune valeur de points liée au palier, le texte de la planche le dit.
+-->
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartes et raretés - maquette</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  colors: { paper:'#F2F4F7', ink:'#141B26', ink2:'#455062', muted:'#5B6678', line:'#DDE2E9', brass:'#B07A1E', brassink:'#7E5409', brasssoft:'#F3E7CC', ame:'#5B3FA6' },
+  fontFamily: { serif:['Fraunces','Georgia','serif'], sans:['"Hanken Grotesk"','system-ui','sans-serif'] }
+}}}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{background:#E6E9EE;color:#141B26;font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:480px;margin:0 auto;background:#F2F4F7;min-height:100vh;box-shadow:0 0 0 1px #DDE2E9}
+.num{font-family:Fraunces,Georgia,serif;font-variant-numeric:lining-nums tabular-nums}
+button:focus-visible,label:focus-within,a:focus-visible{outline:2px solid #7E5409;outline-offset:2px}
+
+/* ============ CARTE ============ */
+.cw{container-type:inline-size;width:100%}
+.tilt{--mx:30%;--my:18%;--rx:0deg;--ry:0deg;position:relative;transform-style:preserve-3d;
+  transform:perspective(800px) rotateX(var(--rx)) rotateY(var(--ry));transition:transform .25s ease-out;touch-action:pan-y}
+.tilt.live{transition:transform .06s linear}
+.fcard{position:relative;aspect-ratio:5/7;width:100%;border-radius:7cqw;overflow:hidden;isolation:isolate;
+  color:var(--ink);background:var(--face);box-shadow:var(--shadow);border:var(--border,1px solid var(--edge))}
+.fcard>*{position:absolute}
+.grain{inset:0;z-index:0;opacity:var(--grain,.2);mix-blend-mode:multiply;pointer-events:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+.guil{inset:0;z-index:0;pointer-events:none;background:var(--guil,none)}
+.rule{z-index:3;pointer-events:none;inset:var(--rule-in,3cqw);border-radius:calc(7cqw - var(--rule-in,3cqw));border:var(--rule,0 solid transparent)}
+.top{z-index:4;left:7cqw;right:7cqw;top:6cqw}
+.row1{display:flex;justify-content:space-between;align-items:center}
+.tier{font-family:Fraunces,serif;font-style:italic;font-weight:500;font-size:7.2cqw;line-height:1;color:var(--sub)}
+.pips{display:flex;gap:1.6cqw}
+.pips i{width:2.6cqw;height:2.6cqw;transform:rotate(45deg);border:.5cqw solid var(--pip);background:transparent}
+.pips i.on{background:var(--pip)}
+.row2{display:flex;justify-content:space-between;align-items:flex-start;margin-top:2cqw}
+.score{font-family:Fraunces,serif;font-weight:700;font-size:19cqw;line-height:.9;letter-spacing:-.02em;font-variant-numeric:lining-nums;color:var(--ink);text-shadow:var(--emboss,none)}
+.scorelbl{display:block;font-size:5.6cqw;font-weight:500;color:var(--sub);margin-top:1.4cqw;letter-spacing:.01em}
+.pos{font-size:6cqw;font-weight:600;padding:1.2cqw 3cqw;border-radius:9cqw;border:1px solid var(--pill-b);background:var(--pill);color:var(--ink);margin-top:.5cqw}
+.win{z-index:2;left:50%;transform:translateX(-50%);top:31%;width:60%;height:34%;border-radius:30cqw 30cqw 3cqw 3cqw;overflow:hidden;
+  background:var(--win);box-shadow:var(--win-sh)}
+.win svg{position:absolute;inset:0;width:100%;height:100%}
+.win .fade{position:absolute;inset:0;background:linear-gradient(to top,var(--face-end) 0,transparent 38%);pointer-events:none}
+.win .tint{position:absolute;inset:0;background:var(--wtint);mix-blend-mode:multiply;pointer-events:none}
+.nophoto{display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column}
+.nophoto b{font-family:Fraunces,serif;font-weight:700;font-size:30cqw;line-height:1;color:var(--sil);opacity:.9}
+.nophoto span{font-size:5.4cqw;color:var(--sub);margin-top:1cqw;font-weight:500}
+.nophoto-on .win svg{display:none}.nophoto-on .nophoto{display:flex}
+.foot{z-index:4;left:7cqw;right:7cqw;bottom:5.5cqw}
+.name{font-family:Fraunces,serif;font-weight:700;font-size:8.6cqw;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.club{font-size:6.2cqw;font-weight:500;color:var(--sub);margin-top:1cqw}
+.stats{display:flex;justify-content:space-between;margin-top:3cqw;padding-top:2.6cqw;border-top:1px solid var(--hair)}
+.stats div{display:flex;flex-direction:column;align-items:flex-start}
+.stats b{font-family:Fraunces,serif;font-weight:700;font-size:7.6cqw;line-height:1;font-variant-numeric:lining-nums}
+.stats span{font-size:5.4cqw;color:var(--sub);margin-top:.8cqw}
+.sheen{inset:0;z-index:6;pointer-events:none;opacity:0;transition:opacity .3s;mix-blend-mode:soft-light;
+  background:radial-gradient(circle at var(--mx) var(--my),rgba(255,255,255,.95),rgba(255,255,255,0) 46%)}
+.tilt.live .sheen{opacity:var(--sheen,.55)}
+.pearl{inset:0;z-index:5;pointer-events:none;opacity:0;mix-blend-mode:screen;
+  background:linear-gradient(115deg,#ffc9ea 0%,#b8e4ff 25%,#d9c9ff 50%,#ffe6b8 75%,#ffc9ea 100%);background-size:260% 100%;background-position:var(--mx) 0}
+
+/* Bronze : papier mat, filet simple, aucun reflet */
+.t-bronze{--face:linear-gradient(165deg,#F2E6DA,#E6D3C1);--face-end:#E9D8C8;--edge:#B58A66;--ink:#35210F;--sub:#6B4A31;--hair:rgba(107,74,49,.28);
+  --pip:#9A6238;--pill:rgba(255,255,255,.45);--pill-b:rgba(107,74,49,.3);--grain:.5;
+  --win:radial-gradient(circle at 50% 30%,#DCC3AB,#C8A78C);--win-sh:inset 0 2px 5px rgba(60,35,15,.28),inset 0 -1px 0 rgba(255,255,255,.5);--wtint:rgba(181,138,102,.28);--sil:#7A4F2E;
+  --shadow:0 1px 2px rgba(60,35,15,.14),0 8px 14px -10px rgba(60,35,15,.35);--sheen:0}
+/* Silver : métal brossé, filet + biseau blanc */
+.t-silver{--face:repeating-linear-gradient(90deg,rgba(255,255,255,.38) 0 1px,rgba(255,255,255,0) 1px 3px),linear-gradient(145deg,#F5F7F9,#D5DBE1 55%,#EBEEF1);--face-end:#DDE2E7;--edge:#8A97A4;--ink:#17202A;--sub:#465260;--hair:rgba(70,82,96,.3);
+  --pip:#5E6C7B;--pill:rgba(255,255,255,.6);--pill-b:rgba(70,82,96,.3);--grain:.15;--rule:1px solid rgba(255,255,255,.85);--rule-in:0px;
+  --win:linear-gradient(180deg,#C9D1D9,#AEB8C2);--win-sh:inset 0 2px 4px rgba(23,32,42,.25),0 1px 0 rgba(255,255,255,.9);--wtint:rgba(120,135,150,.25);--sil:#4A5766;
+  --shadow:0 1px 2px rgba(23,32,42,.14),0 10px 18px -12px rgba(23,32,42,.45);--sheen:.6}
+/* Gold : feuille d'or satinée, guillochis, double filet */
+.t-gold{--face:linear-gradient(150deg,#FAF0CF 0%,#EDD28A 48%,#F6E6B0 100%);--face-end:#EFD995;--edge:#B8892B;--ink:#3F2B03;--sub:#654508;--hair:rgba(101,69,8,.3);
+  --pip:#9A6D0F;--pill:rgba(255,250,230,.6);--pill-b:rgba(101,69,8,.35);--grain:.25;--emboss:0 1px 0 rgba(255,255,255,.75),0 -1px 0 rgba(101,69,8,.18);
+  --guil:repeating-linear-gradient(45deg,rgba(120,80,0,.07) 0 1px,transparent 1px 5px),repeating-linear-gradient(-45deg,rgba(120,80,0,.07) 0 1px,transparent 1px 5px);
+  --rule:1px solid rgba(154,109,15,.7);--rule-in:2.6cqw;
+  --win:radial-gradient(circle at 50% 28%,#F4E2A6,#D9B867);--win-sh:inset 0 2px 5px rgba(101,69,8,.35),0 1px 0 rgba(255,255,255,.7);--wtint:rgba(184,137,43,.3);--sil:#7A5410;
+  --shadow:0 1px 2px rgba(101,69,8,.2),0 12px 20px -12px rgba(101,69,8,.5);--sheen:.75}
+/* Élite : nacre sur fond encre. Seule carte sombre, seule carte avec halo */
+.t-elite{--face:linear-gradient(160deg,#1C2142,#10131F 70%);--face-end:#121626;--edge:transparent;--ink:#F4F2FB;--sub:#BDBADB;--hair:rgba(233,224,255,.25);
+  --pip:#E6DEFF;--pill:rgba(255,255,255,.08);--pill-b:rgba(233,224,255,.4);--grain:.08;
+  --guil:repeating-radial-gradient(circle at 50% 40%,rgba(233,224,255,.06) 0 1px,transparent 1px 7px);
+  --rule:1px solid rgba(233,224,255,.22);--rule-in:2.6cqw;
+  --win:radial-gradient(circle at 50% 25%,#3A3F72,#1A1E3A);--win-sh:inset 0 2px 8px rgba(0,0,0,.55),0 0 0 1px rgba(233,224,255,.25);--wtint:rgba(120,100,220,.18);--sil:#C9C0F5;
+  --border:1.6px solid transparent;
+  --shadow:0 2px 4px rgba(20,27,38,.25),0 16px 28px -14px rgba(91,63,166,.7);--sheen:.9}
+.t-elite.fcard{background:linear-gradient(160deg,#1C2142,#10131F 70%) padding-box,conic-gradient(from 210deg,#E9E0FF,#B9E6FF,#FFD9EC,#E1E8FF,#F3E7FF,#E9E0FF) border-box}
+.t-elite .pearl{opacity:.06;transition:opacity .3s}.t-elite .tilt.live .pearl{opacity:.32}
+.t-elite .win svg{filter:drop-shadow(0 0 0 transparent)}
+.t-bronze .win .fade,.t-silver .win .fade{display:block}
+.t-elite .score{background:linear-gradient(120deg,#fff,#E6DEFF 50%,#BFE9FF);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* Gold : ligne de reflet statique en diagonale (pas d'animation) */
+.t-gold .sheen{mix-blend-mode:soft-light}
+
+/* Variantes de taille */
+.mini .top .tier,.mini .scorelbl,.mini .club,.mini .stats,.mini .pos{display:none}
+.mini .score{font-size:26cqw}
+.mini .top{top:7cqw}
+.mini .name{font-size:11cqw}
+.mini .win{top:36%;height:30%}
+.mini .foot{bottom:6cqw}
+#recap .name{display:none}#recap .win{top:40%;height:44%}
+
+/* ============ Révélation ============ */
+.stage{position:relative;perspective:1000px;display:flex;justify-content:center;padding:28px 0 20px;
+  background:radial-gradient(ellipse at 50% 38%,#FFFFFF 0,#F2F4F7 62%)}
+.flipwrap{position:relative;width:236px}
+.flip{position:relative;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.2,.7,.2,1);aspect-ratio:5/7;width:100%}
+.flip.flipped{transform:rotateY(180deg)}
+.flip>.face,.flip>.back{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.flip>.face{transform:rotateY(180deg)}
+.back .fcard{background:linear-gradient(160deg,#1E2638,#121823);--shadow:0 2px 4px rgba(20,27,38,.2),0 14px 24px -14px rgba(20,27,38,.55);border:1px solid #2C3648;color:#E8D7AE}
+.back .fcard .ring{inset:0;display:flex;align-items:center;justify-content:center;
+  background:repeating-radial-gradient(circle at 50% 50%,rgba(214,176,98,.14) 0 1px,transparent 1px 6px)}
+.back .mono{position:relative;width:34cqw;height:34cqw;border-radius:50%;border:1px solid rgba(214,176,98,.7);display:flex;align-items:center;justify-content:center;
+  font-family:Fraunces,serif;font-weight:700;font-size:11cqw;color:#E3C887;background:#161D2C;box-shadow:0 0 0 2.4cqw #161D2C,0 0 0 2.9cqw rgba(214,176,98,.4)}
+.halo{position:absolute;inset:-14% -22%;z-index:-1;pointer-events:none;opacity:0;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(110,80,210,.38),rgba(110,80,210,0) 70%)}
+.flip.flipped.is-elite~.halo,.flipwrap.is-elite .flip.flipped~.halo{animation:halo 2.4s ease-out forwards}
+@keyframes halo{0%{opacity:0;transform:scale(.7)}35%{opacity:1;transform:scale(1.05)}100%{opacity:.5;transform:scale(1)}}
+.announce{opacity:0;transform:translateY(4px);transition:opacity .5s .55s,transform .5s .55s}
+.announce.on{opacity:1;transform:none}
+.hint{transition:opacity .3s}
+.hint.off{opacity:0}
+
+/* Squelette / chargement */
+.skel{aspect-ratio:5/7;border-radius:7cqw;background:linear-gradient(100deg,#E7EBF0 30%,#F6F8FA 50%,#E7EBF0 70%);background-size:220% 100%;animation:shim 1.5s linear infinite;border:1px solid #DDE2E9}
+@keyframes shim{from{background-position:120% 0}to{background-position:-120% 0}}
+.bar{height:9px;border-radius:5px;background:#DDE2E9}
+
+/* Sélecteur de palier */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:99px;border:1px solid #CBD2DB;background:#fff;font-size:13px;font-weight:600;color:#141B26;cursor:pointer}
+input:checked+.chip{background:#141B26;color:#fff;border-color:#141B26}
+input:focus-visible+.chip{outline:2px solid #7E5409;outline-offset:2px}
+.gray{filter:grayscale(1)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*:before,*:after{animation:none!important;transition:none!important}
+  .tilt{transform:none!important}
+  .flip{transform:none!important}
+  .flip>.face,.flip>.back{transform:none!important;transition:opacity .3s!important}
+  .flip>.face{opacity:0}.flip.flipped>.face{opacity:1}
+  .flip.flipped>.back{opacity:0}
+  .halo{opacity:.5!important}
+  .announce{opacity:1!important;transform:none!important}
+}
+</style>
+</head>
+<body>
+<main class="wrap pb-16">
+
+<!-- ================= Intro ================= -->
+<header class="px-4 pt-8 pb-5">
+  <h1 class="font-serif text-[30px] leading-[1.05] font-bold">Des cartes à garder, pas des jetons qui clignotent</h1>
+  <p class="mt-3 text-[15px] leading-6 text-ink2">Sur fond clair, la rareté passe par la matière : papier, métal brossé, feuille d'or, nacre. Une seule carte brille vraiment, l'Élite. Tout est en tailles réelles pour un écran de 375 px.</p>
+</header>
+
+<!-- ================= 1. Avant / après ================= -->
+<section class="px-4 pb-8" aria-labelledby="s1">
+  <h2 id="s1" class="font-serif text-[22px] font-bold">Actuel et proposition</h2>
+  <p class="mt-1 text-sm text-ink2 leading-5">Même joueur, même donnée. À gauche l'existant (gradient sombre + ombre colorée), à droite la proposition.</p>
+  <div class="mt-4 grid grid-cols-2 gap-3">
+    <div>
+      <p class="text-[13px] font-semibold mb-2">Actuel</p>
+      <div class="rounded-2xl bg-slate-950 p-3 space-y-3">
+        <div class="rounded-xl border-2 border-purple-400 bg-gradient-to-b from-purple-900/80 to-slate-900 shadow-lg shadow-purple-500/60 p-3 text-slate-100">
+          <div class="text-purple-400 text-xs font-bold">Élite</div>
+          <div class="mt-3 mx-auto w-14 h-14 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300">#7</div>
+          <div class="mt-3 font-bold text-sm">Mathis Lenormand</div>
+          <div class="text-xs text-slate-400">AS Monaco</div>
+          <div class="text-amber-500 font-black text-lg mt-1">34.2</div>
+        </div>
+        <div class="rounded-xl border-2 border-yellow-500/60 bg-gradient-to-b from-yellow-900/60 to-slate-900 shadow-lg shadow-yellow-500/60 p-3 text-slate-100">
+          <div class="text-yellow-400 text-xs font-bold">Gold</div>
+          <div class="mt-2 font-bold text-sm">Idriss Kamara</div>
+          <div class="text-amber-500 font-black text-lg">26.8</div>
+        </div>
+      </div>
+      <div class="mt-3 rounded-2xl bg-paper border border-line p-3">
+        <p class="text-[12px] text-muted leading-4 mb-2">Même style posé sur fond clair</p>
+        <div class="rounded-xl border-2 border-purple-400 bg-gradient-to-b from-purple-900/80 to-slate-900 shadow-lg shadow-purple-500/60 p-3 text-slate-100">
+          <div class="text-purple-400 text-xs font-bold">Élite</div>
+          <div class="mt-2 font-bold text-sm">Mathis Lenormand</div>
+        </div>
+        <p class="text-[12px] text-ink2 leading-4 mt-2">Le glow disparaît, il reste un bloc sombre lourd. Les 4 paliers deviennent 4 teintes proches.</p>
+      </div>
+    </div>
+    <div>
+      <p class="text-[13px] font-semibold mb-2">Proposition</p>
+      <div class="rounded-2xl bg-paper border border-line p-3 space-y-3" id="cmp"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 2. Planche 4 paliers ================= -->
+<section class="px-4 pb-8" aria-labelledby="s2">
+  <h2 id="s2" class="font-serif text-[22px] font-bold">Les 4 paliers sur une planche</h2>
+  <p class="mt-1 text-sm text-ink2 leading-5">Chaque palier a sa matière, son cadre, sa jauge de losanges et son nom écrit. La couleur n'est qu'un renfort.</p>
+  <div class="mt-3 flex flex-wrap gap-2">
+    <label class="cursor-pointer"><input id="tgGray" type="checkbox" class="sr-only"><span class="chip">Niveaux de gris</span></label>
+    <label class="cursor-pointer"><input id="tgPhoto" type="checkbox" class="sr-only"><span class="chip">Sans photo</span></label>
+  </div>
+  <div id="board" class="mt-4 grid grid-cols-2 gap-3"></div>
+  <p class="mt-3 text-[13px] leading-5 text-ink2">Touche une carte et fais glisser le doigt : le reflet suit.</p>
+
+  <dl class="mt-5 divide-y divide-line rounded-2xl border border-line bg-white text-sm">
+    <div class="flex gap-3 p-3"><dt class="w-16 shrink-0 font-semibold">Élite</dt><dd class="text-ink2 leading-5">Les 5 % meilleurs joueurs du championnat. Nacre sur fond encre, seule carte à halo.</dd></div>
+    <div class="flex gap-3 p-3"><dt class="w-16 shrink-0 font-semibold">Gold</dt><dd class="text-ink2 leading-5">Les 15 % suivants (jusqu'à 20 %). Feuille d'or, double filet, reflet doré.</dd></div>
+    <div class="flex gap-3 p-3"><dt class="w-16 shrink-0 font-semibold">Silver</dt><dd class="text-ink2 leading-5">Jusqu'à la moitié du championnat. Métal brossé, reflet froid.</dd></div>
+    <div class="flex gap-3 p-3"><dt class="w-16 shrink-0 font-semibold">Bronze</dt><dd class="text-ink2 leading-5">Le reste. Papier mat, pas de reflet.</dd></div>
+  </dl>
+  <p class="mt-3 text-[13px] leading-5 text-ink2">Un palier ne rapporte aucun point en plus : la rareté est purement décorative pour la beta.</p>
+</section>
+
+<!-- ================= 3. En contexte : roster ================= -->
+<section class="px-4 pb-8" aria-labelledby="s3">
+  <h2 id="s3" class="font-serif text-[22px] font-bold">Petite carte dans un roster</h2>
+  <p class="mt-1 text-sm text-ink2 leading-5">La pastille de gauche reprend la matière du palier en miniature, le palier est écrit à droite avec sa jauge.</p>
+  <ul id="roster" class="mt-4 space-y-2"></ul>
+</section>
+
+<!-- ================= 4. Révélation ================= -->
+<section class="pb-8" aria-labelledby="s4">
+  <div class="px-4">
+    <h2 id="s4" class="font-serif text-[22px] font-bold">Révélation d'une carte</h2>
+    <p class="mt-1 text-sm text-ink2 leading-5">Le dos est neutre, il ne trahit pas le palier. Touche la carte pour la retourner, puis incline-la du doigt.</p>
+    <div class="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Palier à prévisualiser" id="tierPick"></div>
+  </div>
+  <div class="stage mt-3" id="stage">
+    <div class="flipwrap" id="fw">
+      <div class="flip" id="flip">
+        <div class="back">
+          <button id="flipBtn" class="block w-full text-left rounded-[7cqw] focus-visible:outline-2" aria-label="Retourner la carte" style="border-radius:16px">
+            <div class="cw"><div class="fcard"><i class="ring"></i><span class="mono" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)">MPP</span></div></div>
+          </button>
+        </div>
+        <div class="face"><div class="cw"><div class="tilt" id="revealTilt"></div></div></div>
+      </div>
+      <div class="halo" id="halo"></div>
+    </div>
+  </div>
+  <div class="px-4 text-center min-h-[84px]">
+    <p id="hint" class="hint text-sm text-muted pt-2">Touche la carte pour la retourner</p>
+    <div id="announce" class="announce">
+      <p id="annTitle" class="font-serif text-[22px] font-bold"></p>
+      <p id="annSub" class="text-sm text-ink2 leading-5 mt-0.5"></p>
+    </div>
+  </div>
+  <div class="px-4 mt-1 flex gap-2">
+    <button id="replay" class="flex-1 rounded-xl border border-[#CBD2DB] bg-white py-3 text-sm font-semibold">Rejouer</button>
+    <button class="flex-1 rounded-xl bg-ink py-3 text-sm font-semibold text-white shadow-[inset_0_0_0_1px_rgba(176,122,30,.7)]">Carte suivante</button>
+  </div>
+
+  <div class="px-4 mt-8">
+    <h3 class="font-serif text-lg font-bold">Récap du pack</h3>
+    <p class="mt-1 text-sm text-ink2 leading-5">Cinq cartes, version réduite : le palier reste lisible sans le texte.</p>
+    <div id="recap" class="mt-3 grid grid-cols-5 gap-2"></div>
+  </div>
+
+  <div class="px-4 mt-8">
+    <h3 class="font-serif text-lg font-bold">Chargement, vide, erreur</h3>
+    <div class="mt-3 grid grid-cols-2 gap-3">
+      <div class="cw"><div class="skel" role="status" aria-label="Chargement de la carte"></div></div>
+      <div class="space-y-2 pt-1"><div class="bar w-4/5"></div><div class="bar w-3/5"></div><div class="bar w-2/5"></div><p class="text-[13px] text-muted leading-5 pt-2">Ouverture du pack en cours</p></div>
+    </div>
+    <div class="mt-4 rounded-2xl border border-dashed border-[#B4BDC9] bg-white p-5 text-center">
+      <div class="mx-auto w-12 h-16 rounded-lg border border-dashed border-[#B4BDC9]"></div>
+      <p class="mt-3 font-semibold">Ton effectif est vide</p>
+      <p class="text-sm text-ink2 leading-5 mt-1">Ouvre ton premier pack pour recevoir tes premières cartes.</p>
+      <button class="mt-3 rounded-xl bg-ink px-5 py-2.5 text-sm font-semibold text-white shadow-[inset_0_0_0_1px_rgba(176,122,30,.7)]">Ouvrir un pack</button>
+    </div>
+    <div class="mt-4 rounded-2xl border border-[#E4B4B0] bg-[#FDF3F2] p-4" role="alert">
+      <p class="font-semibold text-[#8C1D18]">Le pack ne s'est pas ouvert</p>
+      <p class="text-sm text-[#5B1A17] leading-5 mt-1">La connexion a coupé avant la fin. Tes cartes ne sont pas perdues : réessaie pour les voir.</p>
+      <button class="mt-3 rounded-xl border border-[#8C1D18] px-4 py-2 text-sm font-semibold text-[#8C1D18] bg-white">Réessayer</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5. Fragment d'écran ================= -->
+<section class="px-4 pb-8" aria-labelledby="s5">
+  <h2 id="s5" class="font-serif text-[22px] font-bold">Un écran entier, en clair</h2>
+  <p class="mt-1 text-sm text-ink2 leading-5">Fond, en-tête, onglets, bouton principal : pour juger la direction sur toute l'appli.</p>
+  <div class="mt-4 overflow-hidden rounded-[22px] border border-line bg-paper shadow-[0_10px_30px_-18px_rgba(20,27,38,.45)]">
+    <div class="flex items-center justify-between bg-white/90 px-4 pt-4 pb-3 border-b border-line">
+      <div><p class="font-serif text-xl font-bold leading-none">Mon équipe</p><p class="text-xs text-muted mt-1">Ligue des Copains</p></div>
+      <span class="rounded-full bg-brasssoft px-3 py-1 text-xs font-semibold text-brassink">Semaine 6</span>
+    </div>
+    <div class="p-4">
+      <div class="flex items-baseline justify-between"><p class="font-semibold">Ton cinq majeur</p><p class="text-sm text-ink2">Score <span class="num font-bold text-ink">128.4</span></p></div>
+      <div id="screenCards" class="mt-3 grid grid-cols-3 gap-2"></div>
+      <div class="mt-4 rounded-2xl bg-white border border-line p-3 flex items-center justify-between">
+        <div><p class="text-sm font-semibold">Duel contre Camille</p><p class="text-xs text-muted mt-0.5">Samedi 21 h</p></div>
+        <span class="text-xs font-semibold text-[#0F6B3F] bg-[#E3F4EA] rounded-full px-2.5 py-1">Tu mènes de 6 pts</span>
+      </div>
+      <button class="mt-4 w-full rounded-xl bg-ink py-3 text-[15px] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(176,122,30,.7)]">Modifier ma composition</button>
+      <button class="mt-2 w-full rounded-xl bg-white border border-[#CBD2DB] py-3 text-[15px] font-semibold">Voir le classement</button>
+    </div>
+    <nav class="grid grid-cols-4 border-t border-line bg-white/95 px-2 pt-2 pb-3 text-[11px] font-medium text-muted" aria-label="Navigation">
+      <a class="flex flex-col items-center gap-1" href="#"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 11l8-7 8 7v9H4z"/></svg>Accueil</a>
+      <a class="flex flex-col items-center gap-1" href="#"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/></svg>Ligues</a>
+      <a class="flex flex-col items-center gap-1 text-brassink font-semibold" href="#" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M9 14l3-3 3 3"/></svg>Cartes<span class="h-[3px] w-5 rounded bg-brass -mt-0.5"></span></a>
+      <a class="flex flex-col items-center gap-1" href="#"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4 3-6 7-6s7 2 7 6"/></svg>Profil</a>
+    </nav>
+  </div>
+
+  <h3 class="font-serif text-lg font-bold mt-6">Palette</h3>
+  <div id="palette" class="mt-3 grid grid-cols-2 gap-2 text-[13px]"></div>
+</section>
+
+<!-- ================= 6. In Form ================= -->
+<section class="px-4 pb-8" aria-labelledby="s6">
+  <h2 id="s6" class="font-serif text-[22px] font-bold">Emplacement réservé : carte In Form</h2>
+  <p class="mt-1 text-sm text-ink2 leading-5">Après la beta. Rien n'est implémenté : on réserve seulement la place visuelle d'une carte "en forme" de la semaine.</p>
+  <div class="mt-4 grid grid-cols-2 gap-3 items-start">
+    <div class="cw">
+      <div class="relative rounded-[7cqw] border border-dashed border-[#9AA5B4] bg-white/60 flex flex-col items-center justify-center text-center p-4" style="aspect-ratio:5/7">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#5B6678" stroke-width="1.5"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>
+        <p class="font-serif font-bold mt-2">In Form</p>
+        <p class="text-[12px] text-muted leading-4 mt-1">Bientôt disponible</p>
+      </div>
+    </div>
+    <div class="text-[13px] leading-5 text-ink2">
+      <p>Piste : même gabarit de carte, un liseré laiton animé une seule fois à l'arrivée, et une pastille "En forme" sur le score. Elle ne remplace pas le palier, elle s'y ajoute.</p>
+      <p class="mt-2">Décision à prendre avant de la designer : bonus de points ou non.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Notes ================= -->
+<section class="px-4 pb-10" aria-labelledby="s7">
+  <h2 id="s7" class="font-serif text-[22px] font-bold">Choix et questions ouvertes</h2>
+  <div class="mt-3 space-y-3 text-sm leading-6 text-ink2">
+    <p><b class="text-ink">Accent.</b> L'ambre #F59E0B tombe à 2,1:1 sur blanc : illisible en texte. On passe au laiton #B07A1E pour les filets et fonds, #7E5409 pour le texte accent (contraste supérieur à 6:1). Le bouton principal devient encre avec un filet laiton.</p>
+    <p><b class="text-ink">Palette claire.</b> Papier bleuté #F2F4F7 plutôt que crème, pour que l'or des cartes Gold ressorte contre un fond froid.</p>
+    <p><b class="text-ink">Typographies.</b> Fraunces pour les chiffres et les noms (caractère d'objet imprimé), Hanken Grotesk pour l'interface.</p>
+    <p><b class="text-ink">Questions pour le chef de projet.</b> 1) Deux systèmes de paliers coexistent (4 dans TIER_CONFIG, 3 dans AUCTION_TIER_CONFIG utilisés au draft et à la loterie) : lequel garde-t-on ? 2) La carte In Form porte-t-elle des points ? 3) Les testeurs ont-ils droit au mode clair seul, ou faut-il garder un mode sombre ?</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+const T = {
+  elite:  { label:'Élite',  n:4, p:{name:'Mathis Lenormand', club:'AS Monaco',          pos:'Meneur', no:7,  s:'34.2', pts:'22.4', ast:'7.1', reb:'4.0'} },
+  gold:   { label:'Gold',   n:3, p:{name:'Idriss Kamara',     club:'Paris Basketball',   pos:'Ailier', no:13, s:'26.8', pts:'17.9', ast:'3.2', reb:'6.8'} },
+  silver: { label:'Silver', n:2, p:{name:'Tom Vasseur',       club:'Strasbourg SIG',     pos:'Arrière',no:4,  s:'19.4', pts:'13.1', ast:'3.8', reb:'3.1'} },
+  bronze: { label:'Bronze', n:1, p:{name:'Noah Delcourt',     club:'Cholet Basket',      pos:'Pivot',  no:21, s:'11.3', pts:'6.2',  ast:'1.0', reb:'5.4'} }
+};
+const sil = `<svg viewBox="0 0 100 120" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><circle cx="50" cy="48" r="19" fill="var(--sil)" opacity=".85"/><path d="M8 124c2-30 20-42 42-42s40 12 42 42z" fill="var(--sil)" opacity=".8"/></svg>`;
+function face(t, extra=''){
+  const d=T[t], p=d.p, pips=[1,2,3,4].map(i=>`<i class="${i<=d.n?'on':''}"></i>`).join('');
+  return `<article class="fcard t-${t} ${extra}" aria-label="${p.name}, carte ${d.label}, ${p.s} points fantasy de moyenne">
+    <i class="grain"></i>${t==='gold'||t==='elite'?'<i class="guil"></i>':''}<i class="rule"></i>
+    <header class="top"><div class="row1"><span class="tier">${d.label}</span><span class="pips" aria-hidden="true">${pips}</span></div>
+      <div class="row2"><div><span class="score">${p.s}</span><span class="scorelbl">moy. fantasy</span></div><span class="pos">${p.pos}</span></div></header>
+    <div class="win">${sil}<div class="nophoto"><b>${p.no}</b><span>numéro</span></div><i class="tint"></i><i class="fade"></i></div>
+    <footer class="foot"><div class="name">${p.name}</div><div class="club">${p.club}</div>
+      <dl class="stats"><div><b>${p.pts}</b><span>pts</span></div><div><b>${p.ast}</b><span>passes</span></div><div><b>${p.reb}</b><span>rebonds</span></div></dl></footer>
+    <i class="pearl"></i><i class="sheen"></i></article>`;
+}
+const wrap = (t,extra='')=>`<div class="cw"><div class="tilt">${face(t,extra)}</div></div>`;
+
+document.getElementById('cmp').innerHTML = wrap('elite') + wrap('gold');
+document.getElementById('board').innerHTML = ['elite','gold','silver','bronze'].map(t=>wrap(t)).join('');
+document.getElementById('screenCards').innerHTML = ['elite','gold','silver'].map(t=>wrap(t,'mini')).join('');
+document.getElementById('recap').innerHTML = ['bronze','bronze','silver','gold','elite'].map(t=>wrap(t,'mini')).join('');
+document.querySelectorAll('#recap .fcard').forEach(f=>f.style.borderRadius='7cqw');
+
+// Roster
+const rows=[['elite','Mathis Lenormand','AS Monaco','Meneur','34.2'],['gold','Idriss Kamara','Paris Basketball','Ailier','26.8'],['silver','Tom Vasseur','Strasbourg SIG','Arrière','19.4'],['bronze','Noah Delcourt','Cholet Basket','Pivot','11.3']];
+document.getElementById('roster').innerHTML = rows.map(([t,n,c,pos,s])=>{
+  const d=T[t];
+  return `<li class="flex items-center gap-3 rounded-2xl border border-line bg-white p-2.5 pr-3.5">
+    <div class="w-[42px] shrink-0"><div class="cw"><div class="fcard t-${t} mini" style="aspect-ratio:5/7;border-radius:12px"><i class="grain"></i><i class="rule" style="--rule-in:0"></i>
+      <div class="win" style="top:14%;height:46%;width:70%;border-radius:20cqw 20cqw 4cqw 4cqw">${sil}<i class="tint"></i></div>
+      <div class="foot" style="left:0;right:0;bottom:8%;text-align:center"><span class="num font-bold" style="font-size:25cqw;line-height:1;color:var(--ink)">${T[t].p.no}</span></div></div></div></div>
+    <div class="min-w-0 flex-1"><p class="font-semibold text-[15px] truncate">${n}</p><p class="text-[13px] text-muted">${c}, ${pos}</p></div>
+    <div class="text-right"><p class="num text-xl font-bold leading-none">${s}</p>
+      <p class="mt-1.5 flex items-center justify-end gap-1.5 text-[12px] font-semibold text-ink2">${d.label}<span class="flex gap-[3px]" aria-hidden="true">${[1,2,3,4].map(i=>`<i style="width:7px;height:7px;transform:rotate(45deg);border:1.2px solid #455062;background:${i<=d.n?'#455062':'transparent'}"></i>`).join('')}</span></p></div>
+  </li>`}).join('');
+
+// Révélation
+const info={elite:['Carte Élite','Parmi les 5 % meilleurs joueurs du championnat.'],gold:['Carte Gold','Dans le top 20 % du championnat.'],silver:['Carte Silver','Un joueur solide, dans la première moitié.'],bronze:['Carte Bronze','Un joueur de rotation. Il peut te dépanner.']};
+let cur='elite';
+const flip=document.getElementById('flip'),fw=document.getElementById('fw');
+function setReveal(t){ cur=t; document.getElementById('revealTilt').innerHTML=face(t);
+  fw.classList.toggle('is-elite',t==='elite'); reset(); }
+function reset(){ flip.classList.remove('flipped'); document.getElementById('announce').classList.remove('on'); document.getElementById('hint').classList.remove('off');
+  const h=document.getElementById('halo'); h.style.animation='none'; void h.offsetWidth; h.style.animation=''; }
+function doFlip(){ if(flip.classList.contains('flipped'))return; flip.classList.add('flipped');
+  document.getElementById('annTitle').textContent=info[cur][0]; document.getElementById('annSub').textContent=info[cur][1];
+  document.getElementById('announce').classList.add('on'); document.getElementById('hint').classList.add('off'); }
+document.getElementById('flipBtn').addEventListener('click',doFlip);
+document.getElementById('replay').addEventListener('click',reset);
+document.getElementById('tierPick').innerHTML=['elite','gold','silver','bronze'].map((t,i)=>`<label class="cursor-pointer"><input type="radio" name="tp" value="${t}" class="sr-only" ${i===0?'checked':''}><span class="chip">${T[t].label}</span></label>`).join('');
+document.querySelectorAll('input[name=tp]').forEach(r=>r.addEventListener('change',e=>setReveal(e.target.value)));
+setReveal('elite');
+
+// Palette
+const pal=[['#F2F4F7','Papier','fond'],['#FFFFFF','Surface','cartes, barres'],['#141B26','Encre','texte, bouton'],['#455062','Encre 2','texte secondaire'],['#5B6678','Gris doux','légendes'],['#DDE2E9','Filet','séparateurs'],['#B07A1E','Laiton','filets, repères'],['#7E5409','Laiton texte','texte accent'],['#5B3FA6','Améthyste','Élite (rare)'],['#B58A66','Cuivre','Bronze']];
+document.getElementById('palette').innerHTML=pal.map(([h,n,u])=>`<div class="flex items-center gap-2 rounded-xl border border-line bg-white p-2"><span class="h-9 w-9 rounded-lg border border-black/10 shrink-0" style="background:${h}"></span><span class="leading-4"><b class="block">${n}</b><span class="text-muted">${h} ${u}</span></span></div>`).join('');
+
+// Options planche
+document.getElementById('tgGray').addEventListener('change',e=>document.getElementById('board').classList.toggle('gray',e.target.checked));
+document.getElementById('tgPhoto').addEventListener('change',e=>document.querySelectorAll('#board .fcard').forEach(f=>f.classList.toggle('nophoto-on',e.target.checked)));
+
+// Reflet qui suit le toucher
+const rm=matchMedia('(prefers-reduced-motion: reduce)');
+function move(e){ const el=e.target.closest&&e.target.closest('.tilt'); if(!el)return;
+  const r=el.getBoundingClientRect(),x=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),y=Math.min(1,Math.max(0,(e.clientY-r.top)/r.height));
+  el.style.setProperty('--mx',x*100+'%'); el.style.setProperty('--my',y*100+'%');
+  if(!rm.matches){ el.style.setProperty('--rx',((0.5-y)*12)+'deg'); el.style.setProperty('--ry',((x-0.5)*14)+'deg'); }
+  el.classList.add('live'); }
+function leave(e){ const el=e.target.closest&&e.target.closest('.tilt'); if(!el)return;
+  el.classList.remove('live'); el.style.setProperty('--rx','0deg'); el.style.setProperty('--ry','0deg'); }
+document.addEventListener('pointermove',move);
+document.addEventListener('pointerdown',move);
+document.addEventListener('pointerup',leave);
+document.addEventListener('pointerout',e=>{ if(!e.relatedTarget||!e.relatedTarget.closest||!e.relatedTarget.closest('.tilt')) leave(e); });
+</script>
+</body>
+</html>
