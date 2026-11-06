@@ -1,44 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import { CURRENT_SEASON } from '@/lib/sports-api';
+import { loadCollection } from '@/lib/collection';
+import { isLeagueMember, loadRecords } from '@/lib/week-scoring';
 
+// Ma collection (elle appartient au compte) et mes points dans cette ligue
 export async function GET(req: NextRequest, { params }: { params: { leagueId: string } }) {
   const auth = getAuth(req);
   if (!auth) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
 
   const supabase = db();
-  const { data: tps } = await supabase
-    .from('team_players')
-    .select('player_id')
-    .eq('league_id', params.leagueId)
-    .eq('user_id', auth.userId);
 
-  if (!tps?.length) return NextResponse.json({ players: [], totalScore: 0 });
+  if (!(await isLeagueMember(supabase, params.leagueId, auth.userId))) {
+    return NextResponse.json({ error: "Tu n'es pas membre de cette ligue" }, { status: 403 });
+  }
 
-  const playerIds = tps.map(tp => tp.player_id);
-  const { data: players } = await supabase
-    .from('players')
-    .select('*')
-    .in('id', playerIds);
-
-  const { data: perfs } = await supabase
-    .from('player_performances')
-    .select('player_id, fantasy_score, match:matches!inner(status, week, season)')
-    .in('player_id', playerIds)
-    .eq('match.season', CURRENT_SEASON);
-
-  const enriched = (players ?? []).map(p => {
-    const playerPerfs = (perfs ?? []).filter((pp: any) => pp.player_id === p.id);
-    const finishedPerfs = playerPerfs.filter((pp: any) => pp.match?.status === 'finished');
-    const totalFantasy = finishedPerfs.reduce((s: number, pp: any) => s + pp.fantasy_score, 0);
-
-    const sorted = [...finishedPerfs].sort((a: any, b: any) => (b.match?.week ?? 0) - (a.match?.week ?? 0));
-    const lastWeekFantasy = sorted[0]?.fantasy_score ?? 0;
-
-    return { ...p, total_fantasy: Math.round(totalFantasy * 10) / 10, last_week_fantasy: Math.round(lastWeekFantasy * 10) / 10 };
-  }).sort((a, b) => b.total_fantasy - a.total_fantasy);
-
-  const totalScore = Math.round(enriched.reduce((s, p) => s + p.total_fantasy, 0) * 10) / 10;
-  return NextResponse.json({ players: enriched, totalScore });
+  try {
+    const [collection, records] = await Promise.all([
+      loadCollection(supabase, auth.userId),
+      loadRecords(supabase, params.leagueId),
+    ]);
+    return NextResponse.json({ ...collection, totalScore: records[auth.userId]?.pointsFor ?? 0 });
+  } catch (e) {
+    console.error('my-team', e);
+    return NextResponse.json({ error: 'Impossible de charger ton équipe' }, { status: 500 });
+  }
 }

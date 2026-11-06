@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
-import {
-  STARTER_SLOTS, POSITION_GROUP_MAP, computeDefaultStarters,
-  type PositionGroup,
-} from '@/lib/fantasy';
+import { lineupError } from '@/lib/cards';
+import { resolveLineup } from '@/lib/card-scoring';
+import { loadCardRows, toCardView, toScoringCard } from '@/lib/collection';
+import type { LineupState } from '@/lib/card-view';
 import { getPlayableWeek, isLeagueMember } from '@/lib/week-scoring';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -21,37 +21,31 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // La composition s'applique à la prochaine journée à jouer
   const { week: currentWeek, isLocked, lockAt } = await getPlayableWeek(supabase);
 
-  const [{ data: tps }, { data: lineupRows }] = await Promise.all([
-    supabase
-      .from('team_players')
-      .select('player_id, player:players(id, name, position, photo_url, jersey_number, season_avg_fantasy, avg_points, avg_assists, avg_rebounds)')
-      .eq('league_id', leagueId)
-      .eq('user_id', auth.userId),
-    // Composition de la journée, sinon la dernière enregistrée
-    supabase
-      .from('weekly_lineups')
-      .select('week, starter_player_ids')
-      .eq('league_id', leagueId)
-      .eq('user_id', auth.userId)
-      .lte('week', currentWeek)
-      .order('week', { ascending: false })
-      .limit(1),
-  ]);
+  try {
+    const [rows, { data: lineupRows }] = await Promise.all([
+      loadCardRows(supabase, auth.userId),
+      // Composition de la journée, sinon la dernière enregistrée
+      supabase
+        .from('weekly_lineups')
+        .select('week, starter_card_ids')
+        .eq('league_id', leagueId)
+        .eq('user_id', auth.userId)
+        .lte('week', currentWeek)
+        .not('starter_card_ids', 'is', null)
+        .order('week', { ascending: false })
+        .limit(1),
+    ]);
 
-  const players = (tps ?? []).map(tp => tp.player as any).filter(Boolean);
-  const rosterIds = new Set<number>(players.map((p: any) => p.id));
+    const scoring = rows.map(toScoringCard).filter((c): c is NonNullable<typeof c> => c !== null);
+    // Composition enregistrée si elle est encore valide, sinon le cinq par défaut
+    const starterCardIds = resolveLineup(lineupRows?.[0]?.starter_card_ids, scoring).map(c => c.id);
 
-  let starterIds: number[] = (lineupRows?.[0]?.starter_player_ids ?? []).filter((id: number) => rosterIds.has(id));
-  if (starterIds.length !== 5 && players.length > 0) {
-    const roster = players.map((p: any) => ({
-      player_id: p.id,
-      position: p.position ?? '',
-      season_avg_fantasy: p.season_avg_fantasy ?? 0,
-    }));
-    starterIds = computeDefaultStarters(roster);
+    const state: LineupState = { currentWeek, isLocked, lockAt, cards: rows.map(toCardView), starterCardIds };
+    return NextResponse.json(state);
+  } catch (e) {
+    console.error('lineup GET', e);
+    return NextResponse.json({ error: 'Impossible de charger ta composition' }, { status: 500 });
   }
-
-  return NextResponse.json({ currentWeek, isLocked, lockAt, starterIds, players });
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -71,38 +65,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Composition verrouillée : la journée a commencé' }, { status: 423 });
   }
 
-  const { starterIds } = (await req.json()) as { starterIds: number[] };
-  if (!Array.isArray(starterIds) || starterIds.length !== 5 || new Set(starterIds).size !== 5) {
-    return NextResponse.json({ error: 'Il faut exactement 5 titulaires distincts' }, { status: 400 });
+  const body = await req.json().catch(() => null);
+  const starterCardIds: unknown = body?.starterCardIds;
+  if (!Array.isArray(starterCardIds) || !starterCardIds.every(id => typeof id === 'string')) {
+    return NextResponse.json({ error: 'Il faut 5 cartes différentes' }, { status: 400 });
+  }
+  const ids = starterCardIds as string[];
+
+  let owned;
+  try {
+    const rows = await loadCardRows(supabase, auth.userId);
+    owned = new Map(
+      rows.map(toScoringCard).filter((c): c is NonNullable<typeof c> => c !== null).map(c => [c.id, c])
+    );
+  } catch (e) {
+    console.error('lineup POST collection', e);
+    return NextResponse.json({ error: 'Impossible de vérifier ta collection' }, { status: 500 });
   }
 
-  const { data: tps } = await supabase
-    .from('team_players')
-    .select('player_id, player:players(position)')
-    .eq('league_id', leagueId)
-    .eq('user_id', auth.userId);
-
-  const rosterIds = new Set((tps ?? []).map(tp => tp.player_id));
-  if (!starterIds.every(id => rosterIds.has(id))) {
-    return NextResponse.json({ error: 'Joueur non dans ton roster' }, { status: 400 });
-  }
-
-  const posMap = new Map((tps ?? []).map(tp => [tp.player_id, (tp.player as any)?.position ?? '']));
-  const groupCounts: Record<PositionGroup, number> = { arriere: 0, sf: 0, grand: 0 };
-  for (const id of starterIds) {
-    const group = POSITION_GROUP_MAP[posMap.get(id) ?? ''];
-    if (group) groupCounts[group]++;
-  }
-
-  for (const [group, required] of Object.entries(STARTER_SLOTS) as [PositionGroup, number][]) {
-    if (groupCounts[group] !== required) {
-      const label = group === 'arriere' ? 'arrière(s)' : group === 'sf' ? 'SF' : 'grand(s)';
-      return NextResponse.json({ error: `Il faut exactement ${required} ${label} titulaire(s)` }, { status: 400 });
-    }
-  }
+  // Tous les postes sont permis : seul le nombre, l'unicité et la propriété des cartes comptent
+  const invalid = lineupError(ids, owned);
+  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
   const { error } = await supabase.from('weekly_lineups').upsert(
-    { league_id: leagueId, user_id: auth.userId, week, starter_player_ids: starterIds, updated_at: new Date().toISOString() },
+    { league_id: leagueId, user_id: auth.userId, week, starter_card_ids: ids, updated_at: new Date().toISOString() },
     { onConflict: 'league_id,user_id,week' }
   );
   if (error) {

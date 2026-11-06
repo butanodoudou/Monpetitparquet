@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT,
   avatar_color TEXT NOT NULL DEFAULT '#F59E0B',
   login_version INTEGER NOT NULL DEFAULT 1,
+  -- Monnaie virtuelle du jeu de cartes (cf. migrations/2026-11-07_cards.sql)
+  coins INTEGER NOT NULL DEFAULT 0 CHECK (coins >= 0),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -209,7 +211,9 @@ CREATE TABLE IF NOT EXISTS weekly_lineups (
   league_id UUID NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   week INTEGER NOT NULL,
-  starter_player_ids INTEGER[] NOT NULL,
+  starter_player_ids INTEGER[],              -- ancien format, plus lu (cf. starter_card_ids)
+  -- Le cinq suit l'ordre des places : arrière, arrière, ailier, grand, grand.
+  starter_card_ids UUID[],
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT weekly_lineups_league_user_week_key UNIQUE (league_id, user_id, week),
   CONSTRAINT weekly_lineups_five_starters CHECK (cardinality(starter_player_ids) = 5)
@@ -456,6 +460,46 @@ CREATE INDEX IF NOT EXISTS idx_matchups_unsettled ON weekly_matchups(league_id, 
 CREATE INDEX IF NOT EXISTS idx_weekly_lineups_user ON weekly_lineups(user_id);
 CREATE INDEX IF NOT EXISTS idx_matches_season_week ON matches(season, week, status);
 CREATE UNIQUE INDEX IF NOT EXISTS auction_packs_one_bidding_per_league ON auction_packs(league_id) WHERE status = 'bidding';
+
+-- -------------------------------------------------------
+-- Jeu de cartes : la collection appartient au compte (cf. migrations/2026-11-07_cards.sql)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS card_packs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  season TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('starter', 'lundi', 'victoire', 'mission', 'achat')),
+  quality TEXT NOT NULL DEFAULT 'standard' CHECK (quality IN ('standard', 'argent', 'or')),
+  -- Rend les gains idempotents : numéro du paquet de départ, ou journée. NULL pour un achat.
+  reward_key TEXT,
+  opened_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS card_packs_reward_key
+  ON card_packs (user_id, season, source, reward_key) WHERE reward_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS card_packs_unopened ON card_packs (user_id, season) WHERE opened_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS player_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  rarity TEXT NOT NULL CHECK (rarity IN ('bronze', 'silver', 'gold', 'platine')),
+  season TEXT NOT NULL,
+  -- Une carte d'un paquet fermé n'est pas encore dans la collection.
+  pack_id UUID REFERENCES card_packs(id) ON DELETE CASCADE,
+  -- Vendue ou sacrifiée : la ligne reste pour l'historique des duels déjà joués.
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS player_cards_owner ON player_cards (user_id, season) WHERE consumed_at IS NULL;
+CREATE INDEX IF NOT EXISTS player_cards_pack ON player_cards (pack_id);
+CREATE INDEX IF NOT EXISTS player_cards_player ON player_cards (player_id);
+
+-- Tout passe par l'API avec la clé de service, comme pour users.
+ALTER TABLE card_packs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_cards ENABLE ROW LEVEL SECURITY;
 
 -- -------------------------------------------------------
 -- Row Level Security

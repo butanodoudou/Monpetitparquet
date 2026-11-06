@@ -2,15 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { db } from '@/lib/supabase';
 import { CURRENT_SEASON } from '@/lib/sports-api';
 import { buildScheduleRows, SEASON_WEEKS } from '@/lib/schedule';
-import {
-  computeDefaultStarters,
-  computeChemistryBonus,
-  computeWeekendMultiplier,
-  computeDefensiveMultiplier,
-  STARTER_SLOTS,
-  POSITION_GROUP_MAP,
-  type PositionGroup,
-} from '@/lib/fantasy';
+import { EMPTY_STATS, cardsAt, resolveLineup, scoreStarters, type PerfLine, type ScoringCard, type UserWeekStats } from '@/lib/card-scoring';
+import { loadSeasonCardRows, toCardView, toScoringCard } from '@/lib/collection';
+import type { CardView } from '@/lib/card-view';
 
 // Repli de clôture : si aucune journée ultérieure n'est connue en base (matchs à venir non
 // encore synchronisés), une journée terminée n'est clôturée qu'après ce délai suivant son dernier match.
@@ -105,102 +99,89 @@ export async function createLeagueSchedule(
   return { weeks: SEASON_WEEKS - firstWeek + 1, matchups: rows.length, error: error?.message ?? null };
 }
 
-// ─── Contexte de ligue : rosters et compositions ────────────────
-
-interface RosterEntry { player_id: number; position: string; season_avg_fantasy: number }
-interface PlayerMeta { team_id: number | null; nationality: string | null }
+// ─── Contexte de ligue : cartes et compositions ─────────────────
 
 export interface LeagueContext {
-  rosterByUser: Map<string, RosterEntry[]>;
-  ownerByPlayer: Map<number, string>;
-  playerMeta: Map<number, PlayerMeta>;
+  memberIds: string[];
+  /** Toutes les cartes de la saison de chaque manager, vendues comprises. */
+  cardsByUser: Map<string, ScoringCard[]>;
+  /** Vue de chaque carte, pour l'affichage des duels. */
+  viewById: Map<string, CardView>;
 }
 
 export async function loadLeagueContext(supabase: SupabaseClient, leagueId: string): Promise<LeagueContext> {
-  const { data: teamPlayers } = await supabase
-    .from('team_players')
-    .select('user_id, player_id, player:players(position, season_avg_fantasy, team_id, nationality)')
-    .eq('league_id', leagueId);
+  const { data: members } = await supabase.from('league_members').select('user_id').eq('league_id', leagueId);
+  const memberIds = (members ?? []).map(m => m.user_id as string);
 
-  const rosterByUser = new Map<string, RosterEntry[]>();
-  const ownerByPlayer = new Map<number, string>();
-  const playerMeta = new Map<number, PlayerMeta>();
-
-  for (const tp of teamPlayers ?? []) {
-    const player = tp.player as any;
-    if (!rosterByUser.has(tp.user_id)) rosterByUser.set(tp.user_id, []);
-    rosterByUser.get(tp.user_id)!.push({
-      player_id: tp.player_id,
-      position: player?.position ?? '',
-      season_avg_fantasy: player?.season_avg_fantasy ?? 0,
-    });
-    ownerByPlayer.set(tp.player_id, tp.user_id);
-    playerMeta.set(tp.player_id, { team_id: player?.team_id ?? null, nationality: player?.nationality ?? null });
+  const rows = await loadSeasonCardRows(supabase, memberIds);
+  const cardsByUser = new Map<string, ScoringCard[]>(memberIds.map(id => [id, []]));
+  const viewById = new Map<string, CardView>();
+  for (const row of rows) {
+    const card = toScoringCard(row);
+    if (!card) continue;
+    cardsByUser.get(card.user_id)?.push(card);
+    viewById.set(card.id, toCardView(row));
   }
-  return { rosterByUser, ownerByPlayer, playerMeta };
-}
-
-function isValidLineup(ids: number[], roster: RosterEntry[]): boolean {
-  if (ids.length !== 5) return false;
-  const byId = new Map(roster.map(r => [r.player_id, r]));
-  const counts: Record<PositionGroup, number> = { arriere: 0, sf: 0, grand: 0 };
-  for (const id of ids) {
-    const r = byId.get(id);
-    if (!r) return false;
-    const g = POSITION_GROUP_MAP[r.position];
-    if (!g) return false;
-    counts[g]++;
-  }
-  return (Object.keys(STARTER_SLOTS) as PositionGroup[]).every(g => counts[g] === STARTER_SLOTS[g]);
+  return { memberIds, cardsByUser, viewById };
 }
 
 /**
- * Titulaires de chaque manager pour la journée `week` : sa composition de cette journée,
- * sinon la dernière composition enregistrée (journée antérieure), sinon la composition par défaut.
- * Une composition devenue invalide (joueur sorti du roster) est ignorée.
+ * Instant où le cinq d'une journée est figé : le début de son premier match (hors reportés et annulés),
+ * ou maintenant tant qu'elle n'est pas verrouillée.
+ */
+export function lineupCutoffMs(weekMatches: { status: string | null; match_date: string }[], nowMs = Date.now()): number {
+  let lockMs: number | null = null;
+  for (const m of weekMatches) {
+    if (m.status === 'postponed' || m.status === 'cancelled') continue;
+    const t = new Date(m.match_date).getTime();
+    if (lockMs === null || t < lockMs) lockMs = t;
+  }
+  return lockMs === null ? nowMs : Math.min(lockMs, nowMs);
+}
+
+/**
+ * Titulaires de chaque manager pour la journée `week`, dans l'ordre des places : sa composition de
+ * cette journée, sinon la dernière composition enregistrée, sinon le cinq par défaut.
+ * Les cartes comptées sont celles qu'il avait au verrou (`atMs`) : une carte vendue après coup compte
+ * encore pour une journée passée, mais plus pour une journée future. Une composition devenue invalide est ignorée.
  */
 export async function resolveStarters(
   supabase: SupabaseClient,
   leagueId: string,
   week: number,
-  ctx: LeagueContext
-): Promise<Map<string, number[]>> {
+  ctx: LeagueContext,
+  atMs: number
+): Promise<Map<string, ScoringCard[]>> {
   const { data: lineups } = await supabase
     .from('weekly_lineups')
-    .select('user_id, week, starter_player_ids')
+    .select('user_id, week, starter_card_ids')
     .eq('league_id', leagueId)
-    .lte('week', week);
+    .lte('week', week)
+    .not('starter_card_ids', 'is', null);
 
-  const bestByUser = new Map<string, { week: number; ids: number[] }>();
+  const bestByUser = new Map<string, { week: number; ids: string[] }>();
   for (const l of lineups ?? []) {
     const cur = bestByUser.get(l.user_id);
-    if (!cur || l.week > cur.week) bestByUser.set(l.user_id, { week: l.week, ids: l.starter_player_ids ?? [] });
+    if (!cur || l.week > cur.week) bestByUser.set(l.user_id, { week: l.week, ids: l.starter_card_ids ?? [] });
   }
 
-  const result = new Map<string, number[]>();
-  for (const [userId, roster] of Array.from(ctx.rosterByUser)) {
-    const saved = bestByUser.get(userId)?.ids;
-    result.set(userId, saved && isValidLineup(saved, roster) ? saved : computeDefaultStarters(roster));
+  const result = new Map<string, ScoringCard[]>();
+  for (const userId of ctx.memberIds) {
+    const available = cardsAt(ctx.cardsByUser.get(userId) ?? [], atMs);
+    result.set(userId, resolveLineup(bestByUser.get(userId)?.ids, available));
   }
   return result;
 }
 
 // ─── Calcul des scores d'une journée (source unique) ────────────
 
-export interface UserWeekStats {
-  base: number;
-  chem: number;
-  weekendMult: number;
-  defMult: number; // multiplicateur défensif que CE manager applique à son adversaire
-}
+export type { UserWeekStats } from '@/lib/card-scoring';
 
 export interface MatchupScore {
   homeScore: number;
   awayScore: number;
   winnerUserId: string | null; // null = égalité
 }
-
-const EMPTY_STATS: UserWeekStats = { base: 0, chem: 0, weekendMult: 1, defMult: 1 };
 
 /** Score final des deux camps : (base + chimie) x weekend, puis x multiplicateur défensif adverse. */
 export function scoreMatchup(
@@ -229,20 +210,20 @@ export async function computeWeekStats(
   week: number,
   ctx: LeagueContext
 ): Promise<Map<string, UserWeekStats>> {
-  const starters = await resolveStarters(supabase, leagueId, week, ctx);
-
-  const { data: weekMatches } = await supabase
+  const { data: allWeekMatches } = await supabase
     .from('matches')
-    .select('id, home_team_id, away_team_id, home_score, away_score, match_date')
+    .select('id, status, home_team_id, away_team_id, home_score, away_score, match_date')
     .eq('season', CURRENT_SEASON)
-    .eq('week', week)
-    .eq('status', 'finished');
+    .eq('week', week);
 
-  const matchIds = (weekMatches ?? []).map(m => m.id);
+  const starters = await resolveStarters(supabase, leagueId, week, ctx, lineupCutoffMs(allWeekMatches ?? []));
+
+  const weekMatches = (allWeekMatches ?? []).filter(m => m.status === 'finished');
+  const matchIds = weekMatches.map(m => m.id);
 
   // Équipes réelles victorieuses le samedi/dimanche (bonus weekend)
   const winningTeamIds = new Set<number>();
-  for (const m of weekMatches ?? []) {
+  for (const m of weekMatches) {
     const day = new Date(m.match_date).getDay();
     if (day !== 0 && day !== 6) continue;
     if (m.home_score !== null && m.away_score !== null) {
@@ -251,34 +232,25 @@ export async function computeWeekStats(
     }
   }
 
-  const baseByUser: Record<string, number> = {};
-  const defRawByUser: Record<string, number> = {};
-  const playerIds = Array.from(ctx.ownerByPlayer.keys());
-
+  // Perfs de la journée, indexées par joueur : plusieurs managers peuvent aligner le même joueur.
+  const playerIds = Array.from(new Set(Array.from(starters.values()).flatMap(list => list.map(c => c.player_id))));
+  const perfsByPlayer = new Map<number, PerfLine[]>();
   if (matchIds.length > 0 && playerIds.length > 0) {
     const { data: performances } = await supabase
       .from('player_performances')
       .select('player_id, fantasy_score, blocks, steals')
       .in('match_id', matchIds)
       .in('player_id', playerIds);
-
-    for (const perf of performances ?? []) {
-      const owner = ctx.ownerByPlayer.get(perf.player_id);
-      if (!owner || !starters.get(owner)?.includes(perf.player_id)) continue;
-      baseByUser[owner] = (baseByUser[owner] ?? 0) + (perf.fantasy_score ?? 0);
-      defRawByUser[owner] = (defRawByUser[owner] ?? 0) + (perf.blocks ?? 0) + (perf.steals ?? 0);
+    for (const perf of (performances ?? []) as PerfLine[]) {
+      const list = perfsByPlayer.get(perf.player_id) ?? [];
+      list.push(perf);
+      perfsByPlayer.set(perf.player_id, list);
     }
   }
 
   const out = new Map<string, UserWeekStats>();
-  for (const [userId, ids] of Array.from(starters)) {
-    const metas = ids.map(id => ctx.playerMeta.get(id) ?? { team_id: null, nationality: null });
-    out.set(userId, {
-      base: baseByUser[userId] ?? 0,
-      chem: computeChemistryBonus(metas),
-      weekendMult: computeWeekendMultiplier(metas.map(m => ({ team_id: m.team_id })), winningTeamIds),
-      defMult: computeDefensiveMultiplier(defRawByUser[userId] ?? 0),
-    });
+  for (const [userId, list] of Array.from(starters)) {
+    out.set(userId, scoreStarters(list, perfsByPlayer, winningTeamIds));
   }
   return out;
 }

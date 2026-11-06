@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { buildLoginToken, signToken } from '@/lib/auth';
+import { ensureStarterPacks } from '@/lib/collection';
 
 const COLORS = ['#F59E0B','#EF4444','#10B981','#3B82F6','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
 const USERNAME_MIN = 3;
@@ -29,6 +30,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Ce pseudo est déjà pris' }, { status: 409 });
     }
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+  }
+
+  // Paquets de départ. Le compte reste créé en cas d'échec : GET /api/collection rattrape.
+  try {
+    await ensureStarterPacks(db(), data.id);
+  } catch (e) {
+    console.error('ensureStarterPacks', e);
   }
 
   return NextResponse.json({

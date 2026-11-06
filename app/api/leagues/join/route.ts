@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   if (!league) return NextResponse.json({ error: 'Code invalide' }, { status: 404 });
   if (league.draft_status !== 'pending') {
-    return NextResponse.json({ error: 'La draft a déjà commencé' }, { status: 400 });
+    return NextResponse.json({ error: 'La ligue est déjà lancée' }, { status: 400 });
   }
 
   const { count } = await supabase

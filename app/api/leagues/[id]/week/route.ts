@@ -3,6 +3,7 @@ import { CURRENT_SEASON } from '@/lib/sports-api';
 import { getWeekPhase, showsPlayableWeek } from '@/lib/week-phase';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
+import type { DuelStarter } from '@/lib/card-view';
 import {
   getLastScoredWeek,
   getPlayableWeek,
@@ -105,8 +106,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     weekScoreByUser[userId] = round1((s.base + s.chem) * s.weekendMult);
   }
 
+  // Compos secrètes : tant que la journée à jouer n'est pas verrouillée, on ne montre que son propre cinq
+  const lineupsHidden = currentWeek === playable.week && !playable.isLocked;
+
   const side = (userId: string, score: number, opp: string) => {
     const s = statsOf(stats, userId);
+    const starters: DuelStarter[] = lineupsHidden && userId !== auth.userId
+      ? []
+      : s.starters.flatMap(st => {
+          const card = ctx.viewById.get(st.cardId);
+          return card ? [{ card, slot: st.slot, points: st.points, multiplier: st.multiplier }] : [];
+        });
     return {
       user_id: userId,
       team_name: memberMap[userId]?.team_name ?? '',
@@ -117,6 +127,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       chemBonus: s.chem,
       weekendMult: s.weekendMult,
       defMultApplied: statsOf(stats, opp).defMult,
+      starters,
     };
   };
 

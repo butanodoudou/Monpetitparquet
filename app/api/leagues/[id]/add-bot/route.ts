@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { getAuth } from '@/lib/auth';
 import { DRAFT_BUDGET } from '@/lib/fantasy';
+import { ensureStarterPacks } from '@/lib/collection';
 
 const BOT_PERSONAS = [
   { username: 'LeBOT 🤖', email: 'bot-lebot@system.internal', color: '#64748B' },
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   if (!league) return NextResponse.json({ error: 'Ligue introuvable' }, { status: 404 });
   if (league.commissioner_id !== auth.userId) return NextResponse.json({ error: 'Réservé au commissaire' }, { status: 403 });
-  if (league.draft_status !== 'pending') return NextResponse.json({ error: 'La draft a déjà commencé' }, { status: 400 });
+  if (league.draft_status !== 'pending') return NextResponse.json({ error: 'La ligue est déjà lancée' }, { status: 400 });
 
   // Get current members with emails to detect bots
   const { data: members } = await supabase
@@ -87,6 +88,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
 
   if (joinErr) return NextResponse.json({ error: 'Erreur ajout bot' }, { status: 500 });
+
+  // Le bot reçoit ses paquets de départ, ouverts d'office (idempotent : même ligne users pour toutes les ligues)
+  try {
+    await ensureStarterPacks(supabase, botUser.id, { autoOpen: true });
+  } catch (e) {
+    console.error('ensureStarterPacks bot', e);
+  }
 
   return NextResponse.json({ ok: true, bot: { id: botUser.id, username: persona.username } });
 }
