@@ -72,13 +72,13 @@
 
 .board-calme .led-on { opacity: .35; }
 
-.court {
+.board-court {
   position: relative;
   height: 34px;
   overflow: hidden;
 }
 
-.court-line {
+.board-court-line {
   position: absolute;
   left: 0;
   right: 0;
@@ -87,8 +87,8 @@
   background: rgba(255, 255, 255, .28);
 }
 
-.court-center,
-.court-arc {
+.board-court-center,
+.board-court-arc {
   position: absolute;
   top: 50%;
   border: 1px solid rgba(255, 255, 255, .28);
@@ -96,12 +96,12 @@
   transform: translate(-50%, -50%);
 }
 
-.court-center { left: 50%; width: 26px; height: 26px; }
-.court-arc { width: 74px; height: 74px; }
-.court-arc-left { left: -14px; }
-.court-arc-right { left: calc(100% + 14px); }
+.board-court-center { left: 50%; width: 26px; height: 26px; }
+.board-court-arc { width: 74px; height: 74px; }
+.board-court-arc-left { left: -14px; }
+.board-court-arc-right { left: calc(100% + 14px); }
 
-.court-ball {
+.board-court-ball {
   position: absolute;
   top: 50%;
   width: 14px;
@@ -150,5 +150,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .board-live::before { animation: none; }
-  .court-ball { transition: none; }
+  .board-court-ball { transition: none; }
 }

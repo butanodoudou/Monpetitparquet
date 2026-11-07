@@ -74,12 +74,12 @@ export default function Scoreboard({ phase, week, me, opponent, lockAt }: Props)
           </div>
         </div>
 
-        <div className="court" aria-hidden="true">
-          <span className="court-line" />
-          <span className="court-center" />
-          <span className="court-arc court-arc-left" />
-          <span className="court-arc court-arc-right" />
-          {!off && <span className="court-ball" style={{ left: `${ball}%` }} />}
+        <div className="board-court" aria-hidden="true">
+          <span className="board-court-line" />
+          <span className="board-court-center" />
+          <span className="board-court-arc board-court-arc-left" />
+          <span className="board-court-arc board-court-arc-right" />
+          {!off && <span className="board-court-ball" style={{ left: `${ball}%` }} />}
         </div>
 
         {top && (

@@ -30,6 +30,7 @@ const base: [RegExp, unknown][] = [
   [/^\/api\/matches/, data.MATCHES],
   [/^\/api\/players/, data.PLAYERS],
   [/^\/api\/collection$/, data.COLLECTION],
+  [/^\/api\/missions$/, data.MISSIONS],
   [/\/standings$/, data.STANDINGS],
   [/\/lineup$/, data.LINEUP()],
 ];
@@ -51,8 +52,7 @@ const SCREENS: { name: string; path: string; routes: [RegExp, unknown][] }[] = [
   { name: 'cartes-vide', path: '/collection', routes: [[/^\/api\/collection$/, data.COLLECTION_EMPTY], ...base] },
   { name: 'paquet-ferme', path: '/packs', routes: base },
   { name: 'loterie-avant', path: `${L}/lottery`, routes: [[/\/state$/, data.LOTTERY('scheduled')], ...base] },
-  { name: 'loterie-direct', path: `${L}/lottery`, routes: [[/\/state$/, data.LOTTERY('live')], ...base] },
-  { name: 'loterie-pack', path: `${L}/lottery`, routes: [[/\/state$/, data.LOTTERY_PACK()], ...base] },
+  { name: 'loterie-resultat', path: `${L}/lottery`, routes: [[/\/state$/, data.LOTTERY('done')], ...base] },
 ];
 
 for (const screen of SCREENS) {
@@ -130,7 +130,8 @@ test('ouverture d’un paquet : tri du moins rare au plus rare, puis suivant, pu
   await page.getByRole('button', { name: 'Tout retourner d’un coup' }).click();
   await shot(page, info.project.name, 'paquet-2-recap');
   await page.getByRole('button', { name: 'Entrer dans le jeu' }).click();
-  await expect(page).toHaveURL(/\/leagues\?join=K7PLQ2/);
+  await expect(page.getByRole("heading", { name: /Rejoindre/ })).toBeVisible();
+  await expect(page.locator("input[value=\"K7PLQ2\"]")).toBeVisible();
 
   // Rejouer la page : les deux paquets sont ouverts, rien ne revient
   await page.goto('/packs');
@@ -150,11 +151,12 @@ test('composition : choisir une carte affiche le malus de poste avant de valider
   await noOverflow(page);
 });
 
-test('cartes : le détail d’une carte s’ouvre et garde la place des futures actions', async ({ page }, info) => {
+test('cartes : le détail d’une carte propose de vendre et d’améliorer', async ({ page }, info) => {
   await mockApi(page, base);
   await page.goto('/collection');
   await page.getByRole('button', { name: /Karim Benaïssa, Platine/ }).click();
-  await expect(page.locator('[data-slot="card-actions"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Vendre', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Améliorer' })).toHaveCount(0);
   await page.waitForTimeout(300);
   await shot(page, info.project.name, 'cartes-detail');
 });

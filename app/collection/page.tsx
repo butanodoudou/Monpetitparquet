@@ -9,6 +9,9 @@ import Icon from '@/components/Icon';
 import GameCard from '@/components/cards/GameCard';
 import PackSealed from '@/components/cards/PackSealed';
 import { useCollection } from '@/components/cards/useCollection';
+import SellSheet from '@/components/economy/SellSheet';
+import UpgradeSheet from '@/components/economy/UpgradeSheet';
+import BuyPackCard from '@/components/economy/BuyPackCard';
 import { GROUP_PLURAL, positionName, rarityText } from '@/components/cards/labels';
 import { RARITIES, RARITY_CONFIG, type Rarity } from '@/lib/cards';
 import type { CardView } from '@/lib/card-view';
@@ -50,6 +53,7 @@ export default function CollectionPage() {
   const [rarity, setRarity] = useState<RarityFilter>('toutes');
   const [sort, setSort] = useState<Sort>('moyenne');
   const [open, setOpen] = useState<CardView | null>(null);
+  const [selling, setSelling] = useState(false);
 
   useEffect(() => { if (!token) router.replace('/auth'); }, [token, router]);
 
@@ -86,6 +90,14 @@ export default function CollectionPage() {
       } />
 
       <div className="page-scroll">
+        {data && (
+          <div className="px-4 pt-4 space-y-3">
+            <BuyPackCard coins={data.coins} onBought={() => reload()} />
+            {data.cards.length > 0 && (
+              <button type="button" className="btn-secondary" onClick={() => setSelling(true)}>Vendre des cartes</button>
+            )}
+          </div>
+        )}
         {loading && !data && (
           <div className="px-4 pt-5 grid grid-cols-3 gap-3" role="status" aria-label="Chargement de tes cartes">
             {[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="gc-skel" />)}
@@ -187,14 +199,17 @@ export default function CollectionPage() {
         )}
       </div>
 
-      {open && <CardDetail card={open} copies={copies[open.player.id] ?? 1} onClose={() => setOpen(null)} />}
+      {selling && data && <SellSheet cards={data.cards} onClose={() => setSelling(false)} onSold={() => { setSelling(false); reload(); }} />}
+      {open && data && <CardDetail card={open} cards={data.cards} copies={copies[open.player.id] ?? 1} onClose={() => setOpen(null)}
+        onChanged={() => { setOpen(null); reload(); }} />}
       <BottomNav />
     </div>
   );
 }
 
-/** Détail d'une carte en grand. La zone d'actions est réservée aux futurs boutons Vendre et Améliorer. */
-function CardDetail({ card, copies, onClose }: { card: CardView; copies: number; onClose: () => void }) {
+/** Détail d'une carte en grand, avec la vente et l'amélioration. */
+function CardDetail({ card, cards, copies, onClose, onChanged }: { card: CardView; cards: CardView[]; copies: number; onClose: () => void; onChanged: () => void }) {
+  const [sheet, setSheet] = useState<'vendre' | 'ameliorer' | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -216,10 +231,14 @@ function CardDetail({ card, copies, onClose }: { card: CardView; copies: number;
           <div className="flex justify-between gap-4 p-3"><dt className="text-ink2">Effet de la rareté</dt><dd className="font-semibold">{rarityText(card.rarity)}</dd></div>
           {copies > 1 && <div className="flex justify-between gap-4 p-3"><dt className="text-ink2">Exemplaires</dt><dd className="font-semibold">{copies} de ce joueur</dd></div>}
         </dl>
-        {/* Place des futurs boutons Vendre et Améliorer */}
-        <div data-slot="card-actions" className="mt-4 rounded-2xl border border-dashed border-line-strong p-3 text-center text-sm text-muted">
-          Vendre et améliorer arrivent bientôt.
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button type="button" className="btn-secondary" onClick={() => setSheet('vendre')}>Vendre</button>
+          {card.rarity !== 'platine' && (
+            <button type="button" className="btn-primary" onClick={() => setSheet('ameliorer')}>Améliorer</button>
+          )}
         </div>
+        {sheet === 'vendre' && <SellSheet cards={cards} initialSelectedIds={[card.id]} onClose={() => setSheet(null)} onSold={onChanged} />}
+        {sheet === 'ameliorer' && <UpgradeSheet card={card} cards={cards} onClose={() => setSheet(null)} onUpgraded={onChanged} />}
       </div>
     </div>
   );

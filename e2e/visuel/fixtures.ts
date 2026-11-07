@@ -60,43 +60,38 @@ export const LEAGUE = (draft_status: string) => ({
 
 const lotteryMember = (p: ReturnType<typeof person>, tickets: number, rank: number, odds: number) => ({ ...p, is_bot: false, tickets, rank, odds });
 
-const session = (status: string) => ({
-  id: 's1', week: 7, status, current_pick: 2,
-  pick_deadline: new Date(Date.now() + 40_000).toISOString(),
-  started_at: new Date(Date.now() - 120_000).toISOString(),
-  ended_at: null, created_at: new Date().toISOString(), total_picks: 4,
-});
+const LOTTERY_MEMBERS = [lotteryMember(yanis, 3, 1, 15), lotteryMember(sarah, 4, 2, 20), lotteryMember(alex, 5, 3, 25), lotteryMember(tom, 8, 4, 40)];
 
-const lotteryPlayer = (p: (typeof PLAYERS)[number], tier: string) => ({ ...p, group: 'arriere', tier });
-
-export const LOTTERY = (status: 'scheduled' | 'live') => ({
+export const LOTTERY = (status: 'scheduled' | 'done') => ({
   server_now: new Date().toISOString(),
-  session: session(status),
+  session: {
+    id: 's1', week: 7, status,
+    started_at: status === 'done' ? new Date(Date.now() - 600_000).toISOString() : null,
+    ended_at: status === 'done' ? new Date(Date.now() - 600_000).toISOString() : null,
+    created_at: new Date().toISOString(), total_picks: 4,
+  },
   is_commissioner: true,
   can_start: status === 'scheduled',
-  members: [lotteryMember(yanis, 3, 1, 15), lotteryMember(sarah, 4, 2, 20), lotteryMember(alex, 5, 3, 25), lotteryMember(tom, 8, 4, 40)],
+  members: LOTTERY_MEMBERS,
   total_tickets: 20,
-  order: [{ user_id: TOM, pick: 1, tickets: 8 }, { user_id: ME, pick: 2, tickets: 3 }, { user_id: ALEX, pick: 3, tickets: 5 }, { user_id: SARAH, pick: 4, tickets: 4 }],
-  current_user_id: status === 'live' ? ME : null,
-  packs: [1, 2, 3, 4].map(n => ({
-    id: `lp${n}`, pack_number: n, opened: n === 1, opened_by: n === 1 ? TOM : null, taken_by: n === 1 ? TOM : null,
-    chosen: n === 1 ? lotteryPlayer(PLAYERS[1], 'star') : null, released: null,
-  })),
-  my_open_pack: null,
-  my_roster: PLAYERS.map(p => ({ id: p.id, name: p.name, team: p.team, position: p.position, group: 'arriere', season_avg_fantasy: p.season_avg_fantasy })),
-  events: status === 'live' ? [{ pick: 1, user_id: TOM, username: 'Tom', pack_number: 1, chosen: lotteryPlayer(PLAYERS[1], 'star'), released: null, taken_at: new Date().toISOString() }] : [],
+  order: status === 'done'
+    ? [{ user_id: TOM, pick: 1, tickets: 8, quality: 'or' }, { user_id: ME, pick: 2, tickets: 3, quality: 'argent' },
+       { user_id: ALEX, pick: 3, tickets: 5, quality: 'standard' }, { user_id: SARAH, pick: 4, tickets: 4, quality: 'standard' }]
+    : [],
+  reveal_ms: 0,
+  my_pack: status === 'done' ? { id: 'lp2', quality: 'argent', opened: false } : null,
 });
 
-export const LOTTERY_PACK = () => ({
-  ...LOTTERY('live'),
-  my_open_pack: {
-    id: 'lp2', pack_number: 2,
-    players: [
-      lotteryPlayer(PLAYERS[0], 'elite'), lotteryPlayer(PLAYERS[3], 'star'), lotteryPlayer(PLAYERS[5], 'star'),
-      lotteryPlayer(PLAYERS[4], 'basique'), lotteryPlayer(PLAYERS[7], 'basique'),
-    ],
-  },
-});
+export const MISSIONS = {
+  week: 8,
+  missions: [
+    { id: 'cinq', label: 'Poser ton cinq avant le verrouillage', done: true },
+    { id: 'victoire', label: 'Gagner ton duel', done: false },
+    { id: 'trente', label: 'Avoir un titulaire à 30 points ou plus', done: false },
+  ],
+  claimed: false,
+  league: { id: LEAGUE_ID, name: 'Les fans du soleil' },
+};
 
 export const MATCHES = [
   { id: 1, home_team: 'Cholet Basket', away_team: 'Limoges CSP', home_score: null, away_score: null, status: 'scheduled', match_date: new Date(Date.now() + 26 * 3_600_000).toISOString() },

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import MyLoginLink from '@/components/MyLoginLink';
+import MissionsCard from '@/components/economy/MissionsCard';
 import MyDuelBoard, { type DuelWeek } from '@/components/scoreboard/MyDuelBoard';
 import TopBar from '@/components/TopBar';
 import BottomNav from '@/components/BottomNav';
@@ -149,6 +150,7 @@ export default function HomePage() {
           )}
         </div>
 
+        <div className="px-4 pb-4"><MissionsCard /></div>
         <div className="px-4 pb-4"><MyLoginLink /></div>
       </div>
 
