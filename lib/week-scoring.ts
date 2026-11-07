@@ -68,7 +68,7 @@ export async function getPlayableWeek(
       lastFinished = m.week;
     }
   }
-  if (week === null) week = lastFinished + 1;
+  let target: number = week ?? lastFinished + 1;
 
   if (leagueId) {
     const { data: first } = await supabase
@@ -79,19 +79,19 @@ export async function getPlayableWeek(
       .order('week')
       .limit(1)
       .maybeSingle();
-    if (first?.week && first.week > week) week = first.week;
+    if (first?.week && first.week > target) target = first.week;
   }
 
   let lockAtMs: number | null = null;
   for (const m of matches) {
-    if (m.week !== week) continue;
+    if (m.week !== target) continue;
     if (m.status === 'postponed' || m.status === 'cancelled') continue;
     const t = new Date(m.match_date).getTime();
     if (lockAtMs === null || t < lockAtMs) lockAtMs = t;
   }
 
   return {
-    week,
+    week: target,
     lockAt: lockAtMs === null ? null : new Date(lockAtMs).toISOString(),
     isLocked: lockAtMs !== null && Date.now() >= lockAtMs,
   };
