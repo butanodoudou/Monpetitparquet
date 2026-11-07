@@ -1,7 +1,7 @@
 'use client';
 import { formatPoints } from '@/lib/format';
 import type { CSSProperties } from 'react';
-import { AUCTION_TIER_CONFIG, type AuctionTier } from '@/lib/fantasy';
+import type { PackQuality } from '@/lib/cards';
 
 /** Police des chiffres : Barlow Condensed, exposée par la page loterie via la variable --font-barlow. */
 export const NUM_STYLE: CSSProperties = {
@@ -12,25 +12,39 @@ export const NUM_STYLE: CSSProperties = {
 /** 12,3 -> "12,3" (virgule française). */
 export const fmt1 = (n: number) => formatPoints(n).replace('.', ',');
 
-/** Ordre de révélation d'un pack : basique, basique, star, star, élite (l'élite arrive en dernier). */
-export const TIER_REVEAL_RANK: Record<AuctionTier, number> = { basique: 0, star: 1, elite: 2 };
-
-export const tierLabel = (t: AuctionTier) => AUCTION_TIER_CONFIG[t].label;
-export const tierText = (t: AuctionTier) => AUCTION_TIER_CONFIG[t].color;
-/** Fond et bordure de carte par tier (classes de AUCTION_TIER_CONFIG). */
-export const tierBox = (t: AuctionTier) => AUCTION_TIER_CONFIG[t].bg;
-
-/** Couleur de halo selon le tier, pour les cartes révélées. */
-export const TIER_BORDER: Record<AuctionTier, string> = {
-  elite: '#5B3FA6',
-  star: '#B8892B',
-  basique: '#8D99A6',
+export const QUALITY_LABEL: Record<PackQuality, string> = {
+  or: 'Paquet Or',
+  argent: 'Paquet Argent',
+  standard: 'Paquet Standard',
 };
+
+/** Nombre de losanges de la jauge : la qualité se lit sans la couleur. */
+const QUALITY_GAUGE: Record<PackQuality, number> = { standard: 1, argent: 2, or: 3 };
+
+const QUALITY_BOX: Record<PackQuality, string> = {
+  or: 'bg-brand-light text-brand border-brass/60',
+  argent: 'bg-raised text-ink2 border-line-strong',
+  standard: 'bg-surface text-muted border-line',
+};
+
+/** Pastille de qualité : nom écrit + jauge de losanges. */
+export function QualityBadge({ quality, className = '' }: { quality: PackQuality; className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${QUALITY_BOX[quality]} ${className}`}>
+      <span className="flex gap-0.5" aria-hidden>
+        {Array.from({ length: QUALITY_GAUGE[quality] }, (_, i) => (
+          <i key={i} className="block w-1.5 h-1.5 rotate-45 bg-current" />
+        ))}
+      </span>
+      {QUALITY_LABEL[quality]}
+    </span>
+  );
+}
 
 export function Avatar({ name, color, me, size = 32 }: { name: string; color?: string; me?: boolean; size?: number }) {
   return (
     <span
-      className={`shrink-0 rounded-full grid place-items-center font-bold ${me ? 'bg-brand text-ink' : 'text-ink'}`}
+      className={`shrink-0 rounded-full grid place-items-center font-bold ${me ? 'bg-brand text-on-accent' : 'text-ink'}`}
       style={{ width: size, height: size, fontSize: size * 0.4, ...(me ? {} : { backgroundColor: color ?? '#94a3b8' }) }}
       aria-hidden
     >
@@ -38,17 +52,3 @@ export function Avatar({ name, color, me, size = 32 }: { name: string; color?: s
     </span>
   );
 }
-
-/** "il y a 2 min" à partir d'une date ISO. */
-export function relTime(iso: string | null, nowMs: number): string {
-  if (!iso) return '';
-  const s = Math.max(0, Math.round((nowMs - new Date(iso).getTime()) / 1000));
-  if (s < 60) return "à l'instant";
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min`;
-  const h = Math.round(m / 60);
-  return h < 24 ? `${h} h` : `${Math.round(h / 24)} j`;
-}
-
-/** Nom court : dernier mot. */
-export const lastName = (n: string) => n.trim().split(/\s+/).slice(-1)[0] ?? n;

@@ -1,10 +1,9 @@
 // Vérification de la logique pure de la loterie : npx tsx scripts/check-lottery.ts
-// Sort avec un code 1 si un cas échoue.
+// Chaque manager reçoit 1 paquet, la loterie décide de sa qualité. Sort avec un code 1 si un cas échoue.
 
 import {
-  buildPacks, chooseAutoPick, computeTickets, drawOrder, firstPickOdds,
-  isFallbackStartOpen, rankMembers, releaseRule, validatePick,
-  type PoolPlayer, type RosterPlayer,
+  computeTickets, drawOrder, firstPickOdds, isFallbackStartOpen, qualitiesForOrder, rankMembers,
+  silverCount, standingsFromDuels, withQualities,
 } from '../lib/lottery';
 
 let failures = 0;
@@ -57,6 +56,21 @@ check('égalité : le suivant saute un rang (1,2,2,4)', tk('d').rank === 4 && tk
 r = rankMembers([{ user_id: 'a', wins: 0, points: 0 }, { user_id: 'b', wins: 0, points: 0 }, { user_id: 'c', wins: 0, points: 0 }]);
 check('tout le monde à égalité : même nombre de tickets', r.every(x => x.rank === 1 && x.tickets === 1), r);
 
+// ─── Classement depuis les duels réglés ────────────────────────
+console.log('Classement depuis les duels réglés');
+const st = standingsFromDuels(['a', 'b', 'c'], [
+  { home_user_id: 'a', away_user_id: 'b', winner_user_id: 'a', home_score: 120.5, away_score: 100 },
+  { home_user_id: 'b', away_user_id: 'c', winner_user_id: null, home_score: 90, away_score: 90 },
+  { home_user_id: 'c', away_user_id: 'a', winner_user_id: 'c', home_score: 110, away_score: 105.2 },
+]);
+const s = (u: string) => st.find(x => x.user_id === u)!;
+check('victoires comptées, une égalité ne donne rien', s('a').wins === 1 && s('b').wins === 0 && s('c').wins === 1, st);
+check('points cumulés des deux camps', s('a').points === 225.7 && s('b').points === 190 && s('c').points === 200, st);
+check('membre sans duel : zéro', standingsFromDuels(['z'], [])[0].wins === 0);
+// Le dernier du classement a le plus de tickets
+const ranked = rankMembers(st);
+check('le dernier du classement a le plus de tickets', ranked.find(x => x.user_id === 'b')!.tickets === 10, ranked);
+
 // ─── Tirage ────────────────────────────────────────────────────
 console.log('Tirage de l\'ordre');
 let o = drawOrder([{ user_id: 'a', tickets: 10 }], seeded(1));
@@ -67,8 +81,8 @@ check('N=2 : ordre complet sans doublon', o.length === 2 && o[0].user_id !== o[1
 
 const entries6 = [10, 8, 6, 5, 3, 1].map((t, i) => ({ user_id: 'u' + i, tickets: t }));
 let allValid = true;
-for (let s = 0; s < 200; s++) {
-  const d = drawOrder(entries6, seeded(s));
+for (let sd = 0; sd < 200; sd++) {
+  const d = drawOrder(entries6, seeded(sd));
   const ids = d.map(x => x.user_id).sort().join();
   if (d.length !== 6 || ids !== entries6.map(e => e.user_id).sort().join() || d.some((x, i) => x.pick !== i + 1)) allValid = false;
 }
@@ -90,116 +104,44 @@ o = drawOrder([{ user_id: 'a', tickets: 4 }, { user_id: 'b', tickets: 4 }, { use
 check('rng à la borne haute : ne plante pas, ordre complet', o.length === 3);
 
 const odds = firstPickOdds(entries6);
-check('chances de passer 1er : somme ~100 %', Math.abs(Object.values(odds).reduce((s, v) => s + v, 0) - 100) < 0.5, odds);
+check('chances de passer 1er : somme ~100 %', Math.abs(Object.values(odds).reduce((sum, v) => sum + v, 0) - 100) < 0.5, odds);
 check('chances : 10/33 = 30,3 %', odds['u0'] === 30.3, odds['u0']);
 
-// ─── Packs ─────────────────────────────────────────────────────
-console.log('Packs');
-function makePool(elite: number, star: number, basique: number): PoolPlayer[] {
-  const pool: PoolPlayer[] = [];
-  let id = 1;
-  for (let i = 0; i < elite; i++) pool.push({ id: id++, tier: 'elite' });
-  for (let i = 0; i < star; i++) pool.push({ id: id++, tier: 'star' });
-  for (let i = 0; i < basique; i++) pool.push({ id: id++, tier: 'basique' });
-  return pool;
+// ─── Qualité du paquet selon l'ordre ───────────────────────────
+console.log('Qualités des paquets');
+const q = (n: number) => qualitiesForOrder(n).join(',');
+check('n=1 : Or', q(1) === 'or', q(1));
+check('n=2 : Or, Argent', q(2) === 'or,argent', q(2));
+check('n=3 : Or, Argent, Standard (floor(3/3)=1)', q(3) === 'or,argent,standard', q(3));
+check('n=5 : un seul Argent', q(5) === 'or,argent,standard,standard,standard', q(5));
+check('n=6 : deux Argent', q(6) === 'or,argent,argent,standard,standard,standard', q(6));
+check('n=8 : deux Argent', q(8) === 'or,argent,argent,standard,standard,standard,standard,standard', q(8));
+check('n=9 : trois Argent', qualitiesForOrder(9).filter(x => x === 'argent').length === 3);
+check('n=0 : rien', qualitiesForOrder(0).length === 0);
+let sizesOk = true;
+for (let n = 1; n <= 30; n++) {
+  const qs = qualitiesForOrder(n);
+  const ors = qs.filter(x => x === 'or').length;
+  const silvers = qs.filter(x => x === 'argent').length;
+  if (qs.length !== n || ors !== 1 || silvers !== Math.min(silverCount(n), n - 1)) sizesOk = false;
 }
-function noDuplicates(packs: PoolPlayer[][]) {
-  const ids = packs.reduce<number[]>((acc, p) => acc.concat(p.map(x => x.id)), []);
-  return ids.length === new Set(ids).size;
+check('de 1 à 30 managers : un Or, max(1, floor(n/3)) Argent, le reste Standard', sizesOk);
+
+const drawn = withQualities(drawOrder(entries6, seeded(7)));
+check('withQualities : le 1er tiré a Or, le 2e et le 3e... selon n=6', drawn[0].quality === 'or' && drawn[1].quality === 'argent' && drawn[2].quality === 'argent' && drawn[3].quality === 'standard', drawn);
+check('withQualities : chaque manager a exactement une qualité', new Set(drawn.map(d => d.user_id)).size === 6 && drawn.every(d => !!d.quality));
+
+// Le dernier du classement (10 tickets) obtient plus souvent Or que le premier (1 ticket)
+const goldCount: Record<string, number> = {};
+const rng2 = seeded(99);
+for (let i = 0; i < RUNS; i++) {
+  const first = withQualities(drawOrder(entries6, rng2)).find(e => e.quality === 'or')!.user_id;
+  goldCount[first] = (goldCount[first] ?? 0) + 1;
 }
-
-let b = buildPacks(makePool(10, 20, 60), 6, seeded(3));
-check('pool large : 6 packs de 5, non dégradés', b.ok && b.packSize === 5 && !b.degraded && b.packs.length === 6);
-if (b.ok) {
-  check('composition 1 elite / 2 star / 2 basique par pack', b.packs.every(p =>
-    p.filter(x => x.tier === 'elite').length === 1 &&
-    p.filter(x => x.tier === 'star').length === 2 &&
-    p.filter(x => x.tier === 'basique').length === 2));
-  check('aucun joueur dans deux packs', noDuplicates(b.packs));
-}
-
-b = buildPacks(makePool(1, 3, 3), 1, seeded(4));
-check('N=1, pool juste suffisant : 1 pack de 5', b.ok && b.packSize === 5 && b.packs.length === 1);
-
-b = buildPacks(makePool(4, 8, 8), 6, seeded(5));
-check('pool insuffisant pour 5 : packs de 3 dégradés', b.ok && b.packSize === 3 && b.degraded && b.packs.every(p => p.length === 3), b);
-if (b.ok) check('packs de 3 sans doublon', noDuplicates(b.packs));
-
-b = buildPacks(makePool(0, 4, 10), 4, seeded(6));
-check('plus d\'elite : repli sur le tier le plus proche, packs pleins', b.ok && b.packs.every(p => p.length === 3), b);
-
-b = buildPacks(makePool(1, 1, 3), 2, seeded(7));
-check('pool entre N et 3N : packs plus petits, pas de pack vide', b.ok && b.packs.every(p => p.length >= 1) && noDuplicates(b.packs), b);
-
-b = buildPacks([], 6, seeded(8));
-check('pool vide : refus (session annulée)', !b.ok && b.reason === 'empty');
-
-b = buildPacks(makePool(0, 0, 3), 6, seeded(9));
-check('moins de joueurs que de packs : refus', !b.ok && b.reason === 'insufficient');
-
-b = buildPacks([{ id: 1, tier: 'elite' }, { id: 1, tier: 'elite' }, { id: 2, tier: 'star' }], 2, seeded(10));
-check('doublons dans le pool : dédoublonnés', b.ok && noDuplicates(b.packs), b);
-
-// ─── Relâche et postes ─────────────────────────────────────────
-console.log('Relâche et postes');
-const P = (id: number, position: string, avg: number): RosterPlayer => ({ player_id: id, position, season_avg_fantasy: avg });
-// 3 arrières (PG, SG, SG), 2 ailiers (SF, SF), 3 intérieurs (PF, C, C)
-const full: RosterPlayer[] = [
-  P(1, 'PG', 20), P(2, 'SG', 15), P(3, 'SG', 12),
-  P(4, 'SF', 18), P(5, 'SF', 10),
-  P(6, 'PF', 25), P(7, 'C', 14), P(8, 'C', 9),
-];
-
-check('roster plein : relâche obligatoire', releaseRule(full, 'PG').releaseRequired);
-check('roster plein, carte arrière : candidats = les 3 arrières', releaseRule(full, 'SG').candidates.sort().join() === '1,2,3');
-check('relâche du bon poste acceptée', validatePick(full, 'PG', 3).ok);
-check('relâche à un mauvais poste refusée', !validatePick(full, 'PG', 6).ok, validatePick(full, 'PG', 6));
-check('roster plein sans relâche refusé', !validatePick(full, 'C', null).ok);
-check('relâche d\'un joueur absent du roster refusée', !validatePick(full, 'C', 999).ok);
-check('poste inconnu refusé', !validatePick(full, 'XX', 1).ok && !validatePick(full, null, 1).ok);
-check('PF et C sont le même groupe (intérieurs)', validatePick(full, 'PF', 7).ok);
-check('SF relâche un ailier, pas un arrière', validatePick(full, 'SF', 5).ok && !validatePick(full, 'SF', 1).ok);
-
-const seven = full.filter(p => p.player_id !== 8); // il manque un intérieur
-check('roster à 7, poste libre : pas de relâche', !releaseRule(seven, 'C').releaseRequired && validatePick(seven, 'C', null).ok);
-check('roster à 7, poste libre : relâche interdite', !validatePick(seven, 'C', 7).ok);
-check('roster à 7, poste complet : swap du même poste obligatoire', releaseRule(seven, 'PG').releaseRequired && validatePick(seven, 'PG', 2).ok && !validatePick(seven, 'PG', null).ok);
-
-const empty: RosterPlayer[] = [];
-check('roster vide : tout poste accepté sans relâche', validatePick(empty, 'PG', null).ok && validatePick(empty, 'C', null).ok);
-
-const atypical: RosterPlayer[] = [ // 4 arrières + 2 ailiers + 2 intérieurs (hors règle)
-  P(1, 'PG', 20), P(2, 'SG', 15), P(3, 'SG', 12), P(4, 'PG', 11),
-  P(5, 'SF', 18), P(6, 'SF', 10), P(7, 'PF', 25), P(8, 'C', 14),
-];
-const ar = releaseRule(atypical, 'C');
-check('roster atypique plein, poste libre : relâche d\'un groupe en surnombre', ar.releaseRequired && ar.candidates.sort().join() === '1,2,3,4', ar);
-
-// Auto-pick
-let auto = chooseAutoPick(full, [
-  { id: 101, position: 'PG', season_avg_fantasy: 30 },
-  { id: 102, position: 'C', season_avg_fantasy: 22 },
-  { id: 103, position: 'SF', season_avg_fantasy: 28 },
-]);
-check('auto : meilleure moyenne, relâche le plus faible du poste', auto?.playerId === 101 && auto?.releaseId === 3, auto);
-
-auto = chooseAutoPick(seven, [
-  { id: 201, position: 'PG', season_avg_fantasy: 30 },
-  { id: 202, position: 'C', season_avg_fantasy: 12 },
-]);
-check('auto : roster à 7, privilégie la meilleure carte même avec swap', auto?.playerId === 201 && auto?.releaseId === 3, auto);
-
-auto = chooseAutoPick(full, [{ id: 301, position: null, season_avg_fantasy: 99 }, { id: 302, position: 'SG', season_avg_fantasy: 5 }]);
-check('auto : ignore les cartes sans poste valide', auto?.playerId === 302, auto);
-
-auto = chooseAutoPick(full, [{ id: 401, position: null, season_avg_fantasy: 10 }]);
-check('auto : aucune carte prenable -> null', auto === null);
-
-auto = chooseAutoPick(empty, [{ id: 501, position: 'C', season_avg_fantasy: 10 }]);
-check('auto : roster vide, pas de relâche', auto?.playerId === 501 && auto?.releaseId === null);
+check('le dernier du classement a le plus de chances d\'avoir Or', (goldCount['u0'] ?? 0) > (goldCount['u5'] ?? 0) * 5, goldCount);
 
 // ─── Lancement ─────────────────────────────────────────────────
-console.log('Lancement du direct');
+console.log('Lancement du tirage');
 const created = new Date('2026-11-02T08:00:00Z');
 check('avant 12:00 UTC : repli fermé', !isFallbackStartOpen(created, new Date('2026-11-02T11:59:59Z')));
 check('à partir de 12:00 UTC : repli ouvert', isFallbackStartOpen(created, new Date('2026-11-02T12:00:00Z')));

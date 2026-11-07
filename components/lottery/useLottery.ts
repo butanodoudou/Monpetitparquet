@@ -6,8 +6,8 @@ import type { LotteryState } from '@/lib/lottery-types';
 
 /**
  * État de la loterie d'une ligue : fetch de /state, puis refetch à chaque changement de lottery_sessions
- * (Realtime, lecture anon) avec un sondage lent en filet de sécurité si le live est coupé.
- * `now()` renvoie l'heure serveur estimée, pour caler les timers sur pick_deadline.
+ * (Realtime, lecture anon) avec un sondage lent en filet de sécurité tant que le tirage n'a pas eu lieu.
+ * `now()` renvoie l'heure serveur estimée, pour caler la révélation sur started_at.
  */
 export function useLottery(leagueId: string) {
   const [state, setState] = useState<LotteryState | null>(null);
@@ -48,11 +48,11 @@ export function useLottery(leagueId: string) {
     };
   }, [leagueId, refetch]);
 
-  // Filet de sécurité : sondage lent tant que la loterie est en direct ou programmée
+  // Filet de sécurité : sondage lent tant que le tirage n'a pas eu lieu
   const status = state?.session?.status;
   useEffect(() => {
-    if (status !== 'live' && status !== 'scheduled') return;
-    const iv = setInterval(refetch, status === 'live' ? 10000 : 30000);
+    if (status !== 'scheduled') return;
+    const iv = setInterval(refetch, 30000);
     return () => clearInterval(iv);
   }, [status, refetch]);
 

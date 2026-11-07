@@ -5,6 +5,7 @@ import { buildScheduleRows, SEASON_WEEKS } from '@/lib/schedule';
 import { EMPTY_STATS, cardsAt, resolveLineup, scoreStarters, type PerfLine, type ScoringCard, type UserWeekStats } from '@/lib/card-scoring';
 import { loadSeasonCardRows, toCardView, toScoringCard } from '@/lib/collection';
 import type { CardView } from '@/lib/card-view';
+import { grantSettlementRewards } from '@/lib/rewards';
 
 // Repli de clôture : si aucune journée ultérieure n'est connue en base (matchs à venir non
 // encore synchronisés), une journée terminée n'est clôturée qu'après ce délai suivant son dernier match.
@@ -335,6 +336,8 @@ export async function settleFinishedWeeks(leagueId: string): Promise<number> {
         .is('settled_at', null);
       if (error) throw new Error(error.message);
     }
+    // Paquets de victoire et de mission (ne lève jamais d'erreur, idempotent)
+    await grantSettlementRewards(supabase, leagueId, week, stats);
     settled++;
   }
   return settled;
