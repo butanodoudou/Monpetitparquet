@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   // La composition s'applique à la prochaine journée à jouer
-  const { week: currentWeek, isLocked, lockAt } = await getPlayableWeek(supabase);
+  const { week: currentWeek, isLocked, lockAt } = await getPlayableWeek(supabase, leagueId);
 
   try {
     const [rows, { data: lineupRows }] = await Promise.all([
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // La journée est déterminée côté serveur (le client ne choisit pas)
-  const { week, isLocked } = await getPlayableWeek(supabase);
+  const { week, isLocked } = await getPlayableWeek(supabase, leagueId);
   if (isLocked) {
     return NextResponse.json({ error: 'Composition verrouillée : la journée a commencé' }, { status: 423 });
   }

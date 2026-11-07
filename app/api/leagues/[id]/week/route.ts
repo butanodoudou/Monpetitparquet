@@ -46,7 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .order('week')
     .limit(1)
     .maybeSingle();
-  const playable = await getPlayableWeek(supabase);
+  const playable = await getPlayableWeek(supabase, leagueId);
   const { data: lastSettled } = await supabase
     .from('weekly_matchups')
     .select('settled_at')

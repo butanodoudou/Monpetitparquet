@@ -50,7 +50,9 @@ export async function getLastScoredWeek(supabase: SupabaseClient): Promise<numbe
  * Verrouillée dès que le premier match de cette journée a commencé.
  */
 export async function getPlayableWeek(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  /** Pour une ligue lancée en cours de saison : on ne regarde jamais avant sa première journée. */
+  leagueId?: string
 ): Promise<{ week: number; lockAt: string | null; isLocked: boolean }> {
   const matches = await loadSeasonMatches(supabase);
 
@@ -67,6 +69,18 @@ export async function getPlayableWeek(
     }
   }
   if (week === null) week = lastFinished + 1;
+
+  if (leagueId) {
+    const { data: first } = await supabase
+      .from('weekly_matchups')
+      .select('week')
+      .eq('league_id', leagueId)
+      .eq('season', CURRENT_SEASON)
+      .order('week')
+      .limit(1)
+      .maybeSingle();
+    if (first?.week && first.week > week) week = first.week;
+  }
 
   let lockAtMs: number | null = null;
   for (const m of matches) {
