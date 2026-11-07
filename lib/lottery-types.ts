@@ -1,34 +1,6 @@
 // Types partagés entre les routes /api/lottery et l'interface (client et serveur).
 
-import type { AuctionTier, PositionGroup } from '@/lib/fantasy';
-
-export interface LotteryPlayer {
-  id: number;
-  name: string;
-  team: string;
-  position: string | null;
-  group: PositionGroup | null;
-  photo_url: string | null;
-  jersey_number: number | null;
-  season_avg_fantasy: number;
-  tier: AuctionTier;
-}
-
-/** Joueur d'une équipe (pour choisir qui relâcher). Le tier n'est pas calculé ici. */
-export interface LotteryRosterPlayer {
-  id: number;
-  name: string;
-  team: string;
-  position: string | null;
-  group: PositionGroup | null;
-  season_avg_fantasy: number;
-}
-
-export interface LotteryOpenedPack {
-  id: string;
-  pack_number: number;
-  players: LotteryPlayer[];
-}
+import type { PackQuality } from '@/lib/cards';
 
 export interface LotteryMember {
   user_id: string;
@@ -42,55 +14,43 @@ export interface LotteryMember {
   odds: number;
 }
 
-export interface LotteryPackView {
-  id: string;
-  pack_number: number;
-  opened: boolean;
-  /** Manager qui a ouvert le pack (null si fermé). */
-  opened_by: string | null;
-  taken_by: string | null;
-  /** Renseignés seulement une fois le pick fait. */
-  chosen: LotteryPlayer | null;
-  released: LotteryRosterPlayer | null;
-}
-
-export interface LotteryEvent {
-  pick: number;
+export interface LotteryOrderEntry {
   user_id: string;
-  username: string;
-  pack_number: number;
-  chosen: LotteryPlayer | null;
-  released: LotteryRosterPlayer | null;
-  taken_at: string | null;
+  pick: number;
+  tickets: number;
+  /** Qualité du paquet gagné, fixée par l'ordre tiré. */
+  quality: PackQuality;
 }
 
 export interface LotterySessionView {
   id: string;
   week: number;
-  status: 'scheduled' | 'live' | 'done' | 'cancelled';
-  current_pick: number;
-  pick_deadline: string | null;
+  /** « done » : le tirage a eu lieu. La révélation se joue pendant `reveal_ms` après `started_at`. */
+  status: 'scheduled' | 'done' | 'cancelled';
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
   total_picks: number;
 }
 
+/** Paquet de la journée du joueur, toutes ligues confondues (le meilleur résultat compte). */
+export interface LotteryMyPack {
+  id: string;
+  quality: PackQuality;
+  opened: boolean;
+}
+
 export interface LotteryState {
-  /** Heure serveur, pour caler le timer sur pick_deadline malgré l'horloge du téléphone. */
+  /** Heure serveur, pour caler la révélation sur started_at malgré l'horloge du téléphone. */
   server_now: string;
   session: LotterySessionView | null;
   is_commissioner: boolean;
   can_start: boolean;
   members: LotteryMember[];
   total_tickets: number;
-  /** [{ user_id, pick, tickets }] une fois le direct lancé. */
-  order: { user_id: string; pick: number; tickets: number }[];
-  /** Manager dont c'est le tour (null hors direct). */
-  current_user_id: string | null;
-  packs: LotteryPackView[];
-  /** Pack déjà ouvert par moi mais pas encore pris (reprise après un rechargement). Jamais celui d'un autre. */
-  my_open_pack: LotteryOpenedPack | null;
-  my_roster: LotteryRosterPlayer[];
-  events: LotteryEvent[];
+  /** Ordre tiré avec la qualité de chacun. Vide avant le tirage. */
+  order: LotteryOrderEntry[];
+  /** Durée de la révélation de l'ordre en ms (0 avant le tirage). */
+  reveal_ms: number;
+  my_pack: LotteryMyPack | null;
 }

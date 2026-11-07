@@ -6,17 +6,11 @@ import { Barlow_Condensed } from 'next/font/google';
 import { useAuthStore } from '@/store/authStore';
 import TopBar from '@/components/TopBar';
 import { apiFetch } from '@/lib/api-client';
-import { orderRevealDurationMs } from '@/lib/lottery';
-import type { LotteryEvent } from '@/lib/lottery-types';
+import { silverCount } from '@/lib/lottery';
 import { useLottery, useRemainingMs } from '@/components/lottery/useLottery';
 import TicketOdds from '@/components/lottery/TicketOdds';
 import DrawOrderList from '@/components/lottery/DrawOrderList';
-import TurnTimer from '@/components/lottery/TurnTimer';
-import PackGrid from '@/components/lottery/PackGrid';
-import EventFeed from '@/components/lottery/EventFeed';
-import Recap from '@/components/lottery/Recap';
-import PickSheet from '@/components/lottery/PickSheet';
-import { tierLabel, tierText } from '@/components/lottery/shared';
+import { QUALITY_LABEL, QualityBadge } from '@/components/lottery/shared';
 
 // Police des chiffres, chargée uniquement sur cette page
 const barlow = Barlow_Condensed({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-barlow', display: 'swap' });
@@ -32,6 +26,7 @@ function nextMondayLabel(): string {
 }
 
 const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const rankLabel = (n: number) => (n === 1 ? '1er' : `${n}e`);
 
 export default function LotteryPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,83 +34,27 @@ export default function LotteryPage() {
   const router = useRouter();
   const { state, error, refetch, now } = useLottery(id);
 
-  const [chosenPackId, setChosenPackId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
-  const [autoNotice, setAutoNotice] = useState<LotteryEvent | null>(null);
 
   useEffect(() => { if (!token) router.replace('/auth'); }, [token, router]);
 
   const session = state?.session ?? null;
-  const live = session?.status === 'live';
+  const drawn = session?.status === 'done';
   const meId = user?.id;
-  const total = session?.total_picks ?? 0;
 
-  // Révélation de l'ordre : le premier timer inclut sa durée, jouée chez tous les clients en même temps
-  const revealEndIso = live && session && session.current_pick === 1 && session.started_at
-    ? new Date(new Date(session.started_at).getTime() + orderRevealDurationMs(total)).toISOString()
+  // Révélation collective : la durée part de started_at, jouée au même moment chez tous les clients
+  const revealEndIso = drawn && session?.started_at && state
+    ? new Date(new Date(session.started_at).getTime() + state.reveal_ms).toISOString()
     : null;
   const revealMs = useRemainingMs(revealEndIso, now);
-  const remainingMs = useRemainingMs(live ? session?.pick_deadline : null, now);
-  const revealing = live && revealMs > 0;
+  const revealing = drawn && revealMs > 0;
 
-  // L'animation de glissement de l'ordre ne se joue que si on arrive pendant la révélation
+  // L'animation de glissement ne se joue que si on arrive pendant la révélation
   const staggerRef = useRef<{ id: string; stagger: boolean } | null>(null);
-  if (live && session && staggerRef.current?.id !== session.id) {
+  if (drawn && session && staggerRef.current?.id !== session.id) {
     staggerRef.current = { id: session.id, stagger: revealMs > 0 };
   }
-
-  const myTurn = live && !revealing && !!state && state.current_user_id === meId;
-  const sheetOpen = !!state && myTurn && (!!state.my_open_pack || chosenPackId !== null);
-  const currentPick = session?.current_pick;
-
-  // Nouveau pick : on oublie le pack choisi au tour précédent
-  useEffect(() => { setChosenPackId(null); }, [currentPick, session?.id]);
-
-  // ── Pick automatique ─────────────────────────────────────────
-  // À l'expiration du timer (tour d'un humain) ou juste après la révélation (tour d'un bot), n'importe quel
-  // client appelle /auto. Le serveur déduplique sur current_pick ; on réessaie si l'horloge est en avance.
-  const botTurn = !!state && state.members.some(m => m.user_id === state.current_user_id && m.is_bot);
-  const deadline = session?.pick_deadline ?? null;
-  useEffect(() => {
-    if (!live || !currentPick || !deadline) return;
-    let cancelled = false;
-    const reveal = revealEndIso ? new Date(revealEndIso).getTime() - now() : 0;
-    const wait = botTurn
-      ? Math.max(1500, reveal + 600)
-      : Math.max(0, new Date(deadline).getTime() - now()) + 400;
-
-    const run = async () => {
-      for (let attempt = 0; attempt < 4 && !cancelled; attempt++) {
-        try {
-          await apiFetch(`/api/lottery/${id}/auto`, { method: 'POST', body: JSON.stringify({ pick: currentPick }) });
-          break;
-        } catch {
-          await new Promise(r => setTimeout(r, 1500));
-        }
-      }
-      if (!cancelled) refetch();
-    };
-    const t = setTimeout(run, wait);
-    return () => { cancelled = true; clearTimeout(t); };
-  // revealEndIso change quand la session démarre ; now est stable
-  }, [live, currentPick, deadline, botTurn, id, refetch, revealEndIso, now]);
-
-  // ── Pick fait à ma place (timer expiré) ──────────────────────
-  const myPickRef = useRef<number | null>(null);
-  const confirmedRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!state || !session) return;
-    if (myTurn) { myPickRef.current = session.current_pick; return; }
-    const was = myPickRef.current;
-    if (was !== null && (session.current_pick !== was || session.status !== 'live')) {
-      myPickRef.current = null;
-      if (confirmedRef.current !== was) {
-        const ev = state.events.find(e => e.user_id === meId);
-        if (ev) setAutoNotice(ev);
-      }
-    }
-  }, [state, session, myTurn, meId]);
 
   const start = useCallback(async () => {
     setStarting(true);
@@ -144,16 +83,16 @@ export default function LotteryPage() {
         {header()}
         <div className="px-4 pt-5">
           {error ? (
-            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4" role="alert">
-              <p className="font-semibold text-red-700">Impossible de charger la loterie</p>
+            <div className="rounded-2xl border border-siren/40 bg-siren/10 p-4" role="alert">
+              <p className="font-semibold text-siren">Impossible de charger la loterie</p>
               <p className="text-sm text-ink2 mt-1">{error}</p>
-              <button type="button" onClick={refetch} className="mt-3 h-10 px-4 rounded-lg bg-surface text-ink text-sm font-semibold">Réessayer</button>
+              <button type="button" onClick={refetch} className="mt-3 h-10 px-4 rounded-lg bg-surface border border-line text-ink text-sm font-semibold">Réessayer</button>
             </div>
           ) : (
-            <div className="rounded-2xl border border-line bg-paper p-4 animate-pulse" aria-busy>
+            <div className="rounded-2xl border border-line bg-surface p-4 animate-pulse" aria-busy>
               <div className="h-3 w-28 bg-raised rounded" />
               <div className="h-5 w-52 bg-raised rounded mt-3" />
-              <div className="h-3 w-40 bg-surface rounded mt-3" />
+              <div className="h-3 w-40 bg-raised rounded mt-3" />
             </div>
           )}
         </div>
@@ -167,12 +106,10 @@ export default function LotteryPage() {
       <div className={`page ${barlow.variable}`}>
         {header()}
         <div className="px-4 pt-5">
-          <div className="rounded-2xl border border-line bg-paper p-4">
+          <div className="rounded-2xl border border-line bg-surface p-4">
             <p className="font-semibold">Pas de loterie cette semaine</p>
             <p className="text-sm text-ink2 mt-1 leading-snug">
-              {status === 'cancelled'
-                ? 'Il ne reste pas assez de joueurs libres pour remplir les packs. '
-                : "Aucun match de LNB Élite n'a été joué, ou la ligue n'a pas encore terminé sa draft. "}
+              Aucun match de LNB Élite n’a été joué, ou ta ligue n’a pas encore été lancée.
               La prochaine loterie aura lieu {nextMondayLabel()}.
             </p>
           </div>
@@ -181,126 +118,125 @@ export default function LotteryPage() {
     );
   }
 
-  const me = state.members.find(m => m.user_id === meId);
-  const currentMember = state.members.find(m => m.user_id === state.current_user_id);
-  const closedCount = state.packs.filter(p => !p.opened).length;
-  const openedCount = state.packs.length - closedCount;
-  const subtitle = `Journée ${session.week}`;
-
-  const statusBadge = status === 'live'
-    ? <span className="flex items-center gap-1.5 text-xs font-semibold text-red-700"><i className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden />En direct</span>
-    : status === 'done'
-      ? <span className="text-xs font-semibold text-green-700">Terminée</span>
-      : null;
+  const n = state.members.length;
+  const silver = silverCount(n);
+  const myEntry = state.order.find(e => e.user_id === meId);
+  const myPack = state.my_pack;
+  const betterElsewhere = !!(myEntry && myPack && myPack.quality !== myEntry.quality);
 
   return (
     <div className={`page ${barlow.variable}`}>
-      {header(statusBadge)}
+      {header(status === 'done' ? <span className="text-xs font-semibold text-ink2">Terminée</span> : null)}
       <div className="page-scroll !pb-8">
-        <p className="px-4 pt-3 text-xs text-ink2">{subtitle}</p>
+        <p className="px-4 pt-3 text-xs text-ink2">Journée {session.week}</p>
 
         {/* ── PROGRAMMÉE ── */}
         {status === 'scheduled' && (
           <>
             <section className="px-4 pt-3 pb-4">
-              <div className="rounded-2xl border border-brand/30 bg-brand/10 p-4">
+              <div className="rounded-2xl border border-brass/40 bg-brand-light p-4">
                 <p className="text-sm text-brand">{upperFirst(new Date(session.created_at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }))}</p>
                 <p className="mt-1 text-[15px] text-ink leading-snug">
-                  Chaque manager a des tickets selon son classement de la semaine. Plus tu en as, plus tu as de chances de piocher tôt. Le dernier du classement en a le plus.
+                  Chaque manager reçoit un paquet. Le tirage décide de sa qualité : plus ton rang au classement est bas, plus tu as de tickets, et plus tu as de chances d’être tiré tôt.
                 </p>
               </div>
-              <h2 className="mt-6 mb-2 text-sm font-semibold text-ink2">Chances de passer en premier</h2>
+
+              <h2 className="mt-6 mb-2 font-display text-lg font-semibold">Ce que tu peux gagner</h2>
+              <ul className="rounded-2xl border border-line bg-surface divide-y divide-line text-sm">
+                {n > 0 && (
+                  <>
+                    <li className="flex items-center justify-between px-3 py-2.5"><span>Le 1er tiré</span><QualityBadge quality="or" /></li>
+                    {n >= 2 && (
+                      <li className="flex items-center justify-between px-3 py-2.5">
+                        <span>{Math.min(silver + 1, n) === 2 ? 'Le 2e tiré' : `Du 2e au ${Math.min(silver + 1, n)}e tiré`}</span>
+                        <QualityBadge quality="argent" />
+                      </li>
+                    )}
+                    {n > silver + 1 && (
+                      <li className="flex items-center justify-between px-3 py-2.5">
+                        <span>{n === silver + 2 ? `Le ${silver + 2}e tiré` : `Du ${silver + 2}e au ${n}e tiré`}</span><QualityBadge quality="standard" />
+                      </li>
+                    )}
+                  </>
+                )}
+              </ul>
+
+              <h2 className="mt-6 mb-2 font-display text-lg font-semibold">Chances d’être tiré en premier</h2>
               <TicketOdds members={state.members} meId={meId} />
               <p className="mt-3 text-xs text-muted leading-snug">
-                {state.total_tickets} tickets au total. Chaque pack contient 1 Élite, 2 Star et 2 Basique. Tu gardes un joueur et tu en relâches un si ton équipe est complète.
+                {state.total_tickets} tickets au total. Ton paquet s’ouvre dans la page Paquets.
               </p>
             </section>
             <div className="sticky bottom-0 px-4 py-4 bg-gradient-to-t from-paper via-paper to-transparent">
-              {startError && <p className="mb-2 text-sm text-red-700 text-center" role="alert">{startError}</p>}
+              {startError && <p className="mb-2 text-sm text-siren text-center" role="alert">{startError}</p>}
               {state.can_start ? (
                 <button type="button" onClick={start} disabled={starting}
-                  className="w-full h-12 rounded-xl bg-brand text-on-accent font-bold active:scale-[.98] transition disabled:opacity-60">
-                  {starting ? 'Lancement…' : 'Lancer le tirage'}
+                  className="w-full h-12 rounded-xl bg-ink text-on-accent font-bold active:scale-[.98] transition disabled:opacity-60">
+                  {starting ? 'Tirage en cours…' : 'Lancer le tirage'}
                 </button>
               ) : (
-                <p className="text-center text-sm text-ink2">En attente du commissaire pour lancer le tirage.</p>
+                <p className="text-center text-sm text-ink2">Le commissaire doit lancer le tirage.</p>
               )}
               <p className="mt-2 text-center text-xs text-muted">
                 {state.can_start && !state.is_commissioner
-                  ? "Le commissaire n'a pas lancé : tout membre peut le faire depuis midi (UTC)."
-                  : "Bouton réservé au commissaire. À partir de midi (UTC), n'importe quel membre peut lancer."}
+                  ? 'Le commissaire n’a pas lancé : tu peux le faire depuis midi (UTC).'
+                  : 'Le bouton est réservé au commissaire. À partir de midi (UTC), n’importe quel membre peut lancer.'}
               </p>
             </div>
           </>
         )}
 
-        {/* ── EN DIRECT ── */}
-        {status === 'live' && (
-          <>
-            <TurnTimer remainingMs={revealing ? 60_000 : remainingMs} pick={session.current_pick} total={total}
-              myTurn={myTurn} currentName={myTurn ? (me?.username ?? '') : (currentMember?.username ?? '')}
-              isBot={botTurn} revealing={revealing} />
-
-            {autoNotice && <AutoNotice event={autoNotice} onClose={() => setAutoNotice(null)} />}
-
-            <section className="px-4 mt-6">
-              <h2 className="text-sm font-semibold text-ink2 mb-2">Ordre de passage</h2>
-              <DrawOrderList state={state} meId={meId} stagger={staggerRef.current?.stagger ?? false} />
-            </section>
-
-            <section className="px-4 mt-6">
-              <h2 className="text-sm font-semibold text-ink2 mb-2">
-                Packs <span className="text-muted font-normal">- {closedCount} fermé{closedCount > 1 ? 's' : ''}, {openedCount} ouvert{openedCount > 1 ? 's' : ''}</span>
-              </h2>
-              <PackGrid state={state} canPick={myTurn && !state.my_open_pack} onPick={setChosenPackId} />
-            </section>
-
-            <section className="px-4 mt-6 pb-6">
-              <h2 className="text-sm font-semibold text-ink2 mb-2">Ce qui vient de se passer</h2>
-              <EventFeed state={state} nowMs={now()} />
-            </section>
-          </>
-        )}
-
-        {/* ── TERMINÉE ── */}
+        {/* ── TIRAGE FAIT ── */}
         {status === 'done' && (
           <section className="px-4 pt-3">
-            {autoNotice && <AutoNotice event={autoNotice} onClose={() => setAutoNotice(null)} />}
-            <p className="text-[15px] text-ink2 leading-snug">
-              Les {total} picks sont faits et les nouveaux joueurs sont déjà dans les équipes. Vérifie ton cinq de départ.
+            <h2 className="font-display text-xl font-semibold">
+              {revealing ? 'Le tirage est en cours' : 'Voici l’ordre du tirage'}
+            </h2>
+            <p className="mt-1 mb-3 text-sm text-ink2 leading-snug">
+              Le premier tiré reçoit un paquet Or, les {silver === 1 ? 'suivant' : `${silver} suivants`} un paquet Argent, les autres un paquet Standard.
             </p>
-            <div className="mt-4"><Recap state={state} meId={meId} /></div>
+            <DrawOrderList state={state} meId={meId} stagger={staggerRef.current?.stagger ?? false} />
+
+            {/* Après la révélation seulement, pour ne rien dévoiler avant les autres */}
+            {!revealing && (
+              <div className="mt-6 rounded-2xl border border-brass/40 bg-brand-light p-4" role="status">
+                {myEntry ? (
+                  <>
+                    <p className="font-display text-lg font-semibold">
+                      Tu es {rankLabel(myEntry.pick)} au tirage
+                    </p>
+                    <p className="mt-1 text-sm text-ink2 leading-snug">
+                      {myPack
+                        ? <>Ton paquet du jour est un <span className="font-semibold">{QUALITY_LABEL[myPack.quality].toLowerCase()}</span>.</>
+                        : 'Ton paquet arrive, recharge la page dans un instant.'}
+                      {betterElsewhere && ' Une autre de tes ligues t’a donné mieux : c’est ce paquet que tu gardes.'}
+                    </p>
+                    {myPack && (
+                      <Link href="/packs"
+                        className="mt-4 block w-full h-12 leading-[48px] text-center rounded-xl bg-ink text-on-accent font-semibold">
+                        {myPack.opened ? 'Voir mes paquets' : 'Ouvrir mon paquet'}
+                      </Link>
+                    )}
+                    {!myPack && (
+                      <button type="button" onClick={start} disabled={starting}
+                        className="mt-4 w-full h-11 rounded-xl border border-line bg-surface font-semibold disabled:opacity-60">
+                        {starting ? 'Vérification…' : 'Réessayer'}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-ink2 leading-snug">Tu n’étais pas dans la ligue au moment du tirage.</p>
+                )}
+              </div>
+            )}
             <div className="py-5">
-              <Link href={`/leagues/${id}/team`}
-                className="block w-full h-12 leading-[48px] text-center rounded-xl border border-brand/60 text-brand font-semibold">
-                Voir mon équipe
+              <Link href={backHref} className="block w-full h-12 leading-[48px] text-center rounded-xl border border-line bg-surface font-semibold">
+                Retour à la ligue
               </Link>
             </div>
           </section>
         )}
       </div>
-
-      {sheetOpen && (
-        <PickSheet key={`${session.id}-${session.current_pick}`} leagueId={id} state={state} packId={chosenPackId} now={now}
-          onClose={() => { setChosenPackId(null); refetch(); }}
-          onConfirmed={pick => { confirmedRef.current = pick; setChosenPackId(null); refetch(); }} />
-      )}
-    </div>
-  );
-}
-
-function AutoNotice({ event, onClose }: { event: LotteryEvent; onClose: () => void }) {
-  return (
-    <div className="mx-4 mt-4 rounded-2xl border border-line bg-paper p-5 text-center" role="status">
-      <p className="font-semibold">Temps écoulé</p>
-      <p className="text-sm text-ink2 mt-1 leading-snug">
-        Le jeu a choisi à ta place :{' '}
-        {event.chosen
-          ? <span className={`font-semibold ${tierText(event.chosen.tier)}`}>{event.chosen.name} ({tierLabel(event.chosen.tier)})</span>
-          : 'un joueur'}
-        .{event.released ? ` ${event.released.name} est relâché.` : ''}
-      </p>
-      <button type="button" onClick={onClose} className="mt-4 h-11 px-5 rounded-xl bg-surface font-semibold text-sm">Fermer</button>
     </div>
   );
 }
